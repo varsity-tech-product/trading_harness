@@ -26,6 +26,9 @@ Current status: this repo contains a working v1 trading-agent runtime for the Va
 - MCP server:
   - `arena_agent/mcp/server.py`
   - `run_mcp_server.sh`
+- SDK:
+  - `arena_agent/sdk/`
+  - `examples/sdk_quickstart.py`
 - Legacy scripts:
   - `bot_framework.py`
   - `strategy_1_ma.py`
@@ -103,6 +106,48 @@ Or over HTTP:
 
 The server reuses the same local runtime env file and underlying runtime components as the CLI skills.
 
+## Arena Agent SDK
+
+There is also a thin SDK on top of the MCP layer in `arena_agent/sdk/`.
+
+Design constraints:
+
+- no strategy logic
+- no reward system
+- no training abstractions
+- only state, actions, and an optional loop helper
+
+Minimal example:
+
+```python
+from arena_agent import ArenaAgent
+
+agent = ArenaAgent()
+
+state = agent.state()
+info = agent.competition_info()
+
+if state.position is None and state.market.orderbook_imbalance > 0.25:
+    agent.long(size=0.001)
+else:
+    agent.hold()
+```
+
+Optional loop helper:
+
+```python
+from arena_agent import ArenaAgent
+
+agent = ArenaAgent()
+
+def policy(state):
+    if state.position is None and state.market.orderbook_imbalance > 0.25:
+        return {"type": "OPEN_LONG", "size": 0.001}
+    return "HOLD"
+
+agent.run(policy, max_steps=1)
+```
+
 ## Configuration
 
 Configs live in `arena_agent/config/`.
@@ -155,6 +200,7 @@ Current automated tests cover:
 - TAP request/response translation
 - TAP HTTP fallback behavior
 - MCP tool wrappers
+- SDK view and action helpers
 
 ## Known limitations
 
@@ -175,6 +221,7 @@ arena_agent/
   tap/          minimal external-agent HTTP adapter
   skills/       local CLI skill implementations
   mcp/          MCP server and plain tool wrappers
+  sdk/          thin developer SDK on top of MCP
   config/       sample configs
 tests/          unit tests for runtime, executor, state builder, TAP
 run_live_tap_once.sh
@@ -183,4 +230,5 @@ arena_market_state
 arena_trade
 arena_last_transition
 arena_competition_info
+examples/sdk_quickstart.py
 ```
