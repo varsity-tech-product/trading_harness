@@ -53,7 +53,7 @@ def _headers(auth: bool = True) -> dict[str, str]:
     if auth:
         api_key = _api_key()
         if not api_key:
-            raise RuntimeError("Set VARSITY_API_KEY before using authenticated Arena endpoints.")
+            raise RuntimeError("VARSITY_API_KEY must be injected via the runtime environment.")
         h["X-API-Key"] = api_key
     return h
 

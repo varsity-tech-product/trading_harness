@@ -1,3 +1,4 @@
+# Inject VARSITY_API_KEY via the runtime environment before starting the runtime.
 competition_id: 4
 symbol: BTCUSDT
 interval: 1m

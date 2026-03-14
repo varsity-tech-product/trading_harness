@@ -5,9 +5,15 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 import logging
+import os
 
 from arena_agent.config_loader import load_runtime_config
 from arena_agent.core.runtime_loop import MarketRuntime
+
+
+def _require_runtime_environment() -> None:
+    if not os.environ.get("VARSITY_API_KEY", "").strip():
+        raise SystemExit("VARSITY_API_KEY must be injected via the runtime environment.")
 
 
 def main() -> None:
@@ -35,6 +41,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+    _require_runtime_environment()
     config = load_runtime_config(args.config)
     if args.iterations is not None:
         config = replace(config, max_iterations=args.iterations)
