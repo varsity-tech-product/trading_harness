@@ -15,6 +15,42 @@ from arena_agent.memory.transition_store import TransitionStore
 from arena_agent.memory.trade_journal import TradeJournal
 
 
+def build_transition_event(state, action, execution_result, next_state) -> TransitionEvent:
+    realized_pnl_delta = execution_result.realized_pnl
+    if realized_pnl_delta == 0.0:
+        realized_pnl_delta = next_state.account.realized_pnl - state.account.realized_pnl
+
+    metrics = TransitionMetrics(
+        market_price_before=state.market.last_price,
+        market_price_after=next_state.market.last_price,
+        price_delta=next_state.market.last_price - state.market.last_price,
+        balance_before=state.account.balance,
+        balance_after=next_state.account.balance,
+        balance_delta=next_state.account.balance - state.account.balance,
+        equity_before=state.account.equity,
+        equity_after=next_state.account.equity,
+        equity_delta=next_state.account.equity - state.account.equity,
+        unrealized_pnl_before=state.account.unrealized_pnl,
+        unrealized_pnl_after=next_state.account.unrealized_pnl,
+        unrealized_pnl_delta=next_state.account.unrealized_pnl - state.account.unrealized_pnl,
+        realized_pnl_delta=realized_pnl_delta,
+        fee=execution_result.fee,
+        trade_count_before=state.account.trade_count,
+        trade_count_after=next_state.account.trade_count,
+        trade_count_delta=next_state.account.trade_count - state.account.trade_count,
+        position_changed=(state.position != next_state.position),
+    )
+    return TransitionEvent(
+        timestamp=time.time(),
+        state_before=state,
+        action=action,
+        execution_result=execution_result,
+        state_after=next_state,
+        metrics=metrics,
+        metadata={},
+    )
+
+
 class MarketRuntime:
     def __init__(
         self,
@@ -151,36 +187,4 @@ class MarketRuntime:
         )
 
     def _build_transition(self, state, action, execution_result, next_state) -> TransitionEvent:
-        realized_pnl_delta = execution_result.realized_pnl
-        if realized_pnl_delta == 0.0:
-            realized_pnl_delta = next_state.account.realized_pnl - state.account.realized_pnl
-
-        metrics = TransitionMetrics(
-            market_price_before=state.market.last_price,
-            market_price_after=next_state.market.last_price,
-            price_delta=next_state.market.last_price - state.market.last_price,
-            balance_before=state.account.balance,
-            balance_after=next_state.account.balance,
-            balance_delta=next_state.account.balance - state.account.balance,
-            equity_before=state.account.equity,
-            equity_after=next_state.account.equity,
-            equity_delta=next_state.account.equity - state.account.equity,
-            unrealized_pnl_before=state.account.unrealized_pnl,
-            unrealized_pnl_after=next_state.account.unrealized_pnl,
-            unrealized_pnl_delta=next_state.account.unrealized_pnl - state.account.unrealized_pnl,
-            realized_pnl_delta=realized_pnl_delta,
-            fee=execution_result.fee,
-            trade_count_before=state.account.trade_count,
-            trade_count_after=next_state.account.trade_count,
-            trade_count_delta=next_state.account.trade_count - state.account.trade_count,
-            position_changed=(state.position != next_state.position),
-        )
-        return TransitionEvent(
-            timestamp=time.time(),
-            state_before=state,
-            action=action,
-            execution_result=execution_result,
-            state_after=next_state,
-            metrics=metrics,
-            metadata={},
-        )
+        return build_transition_event(state, action, execution_result, next_state)

@@ -18,6 +18,14 @@ Current status: this repo contains a working v1 trading-agent runtime for the Va
   - Minimal TAP support for external agents through a single HTTP decision endpoint.
 - `run_agent.py`
   - Convenience entrypoint for `python3 -m arena_agent`.
+- Local skill commands:
+  - `arena_market_state`
+  - `arena_trade`
+  - `arena_last_transition`
+  - `arena_competition_info`
+- MCP server:
+  - `arena_agent/mcp/server.py`
+  - `run_mcp_server.sh`
 - Legacy scripts:
   - `bot_framework.py`
   - `strategy_1_ma.py`
@@ -47,6 +55,54 @@ There is a minimal TAP layer in `arena_agent/tap/` for plug-in agents.
 
 This is deliberately minimal and not a larger protocol framework.
 
+## Local skill tools
+
+The repo now exposes the runtime as local CLI tools for Codex-style tool use. These tools auto-load `.env.runtime.local` when present and keep secrets in the local host environment rather than passing them to the model.
+
+- `arena_market_state`
+  - returns the full current `AgentState`
+- `arena_trade`
+  - submits an action and stores the resulting transition
+- `arena_last_transition`
+  - returns the last stored transition from the transition log
+- `arena_competition_info`
+  - returns compact competition metadata useful for decision-making
+
+Examples:
+
+```bash
+./arena_market_state
+./arena_competition_info
+./arena_trade --action HOLD
+echo '{"action":"OPEN_LONG","size":0.001}' | ./arena_trade --execute
+./arena_last_transition
+```
+
+## MCP server
+
+The repo also exposes the same Arena capabilities through a universal MCP server in `arena_agent/mcp/`.
+
+Exposed MCP tools:
+
+- `varsity.market_state`
+- `varsity.trade_action`
+- `varsity.last_transition`
+- `varsity.competition_info`
+
+Run it locally with:
+
+```bash
+./run_mcp_server.sh --transport stdio
+```
+
+Or over HTTP:
+
+```bash
+./run_mcp_server.sh --transport streamable-http --host 127.0.0.1 --port 8000
+```
+
+The server reuses the same local runtime env file and underlying runtime components as the CLI skills.
+
 ## Configuration
 
 Configs live in `arena_agent/config/`.
@@ -70,6 +126,7 @@ For local convenience, this repo also supports an ignored runtime env file:
 - `.env.runtime.local`
 - `.env.runtime.local.example`
 - `run_live_tap_once.sh`
+- `run_mcp_server.sh`
 
 `run_live_tap_once.sh` sources `.env.runtime.local`, starts the local Claude-backed TAP server, and runs one or more runtime iterations without re-entering secrets manually.
 
@@ -97,6 +154,7 @@ Current automated tests cover:
 - optional reward derivation from transitions
 - TAP request/response translation
 - TAP HTTP fallback behavior
+- MCP tool wrappers
 
 ## Known limitations
 
@@ -115,7 +173,14 @@ arena_agent/
   memory/       transition store and journal
   agents/       built-in policies and optional reward models
   tap/          minimal external-agent HTTP adapter
+  skills/       local CLI skill implementations
+  mcp/          MCP server and plain tool wrappers
   config/       sample configs
 tests/          unit tests for runtime, executor, state builder, TAP
 run_live_tap_once.sh
+run_mcp_server.sh
+arena_market_state
+arena_trade
+arena_last_transition
+arena_competition_info
 ```
