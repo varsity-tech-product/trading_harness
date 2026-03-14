@@ -120,14 +120,14 @@ Design constraints:
 Minimal example:
 
 ```python
-from arena_agent import ArenaAgent
+from arena_agent import Arena
 
-agent = ArenaAgent()
+agent = Arena()
 
 state = agent.state()
 info = agent.competition_info()
 
-if state.position is None and state.market.orderbook_imbalance > 0.25:
+if state.position is None and state.price > 0 and state.market.orderbook_imbalance > 0.25:
     agent.long(size=0.001)
 else:
     agent.hold()
@@ -136,9 +136,9 @@ else:
 Optional loop helper:
 
 ```python
-from arena_agent import ArenaAgent
+from arena_agent import Arena
 
-agent = ArenaAgent()
+agent = Arena()
 
 def policy(state):
     if state.position is None and state.market.orderbook_imbalance > 0.25:

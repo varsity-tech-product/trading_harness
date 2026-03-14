@@ -2,6 +2,6 @@
 
 from arena_agent.core.models import RuntimeConfig
 from arena_agent.core.runtime_loop import MarketRuntime
-from arena_agent.sdk import ArenaAgent
+from arena_agent.sdk import Arena, ArenaAgent
 
-__all__ = ["ArenaAgent", "MarketRuntime", "RuntimeConfig"]
+__all__ = ["Arena", "ArenaAgent", "MarketRuntime", "RuntimeConfig"]

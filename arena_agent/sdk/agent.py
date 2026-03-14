@@ -14,6 +14,16 @@ class ArenaAgent:
         self.client = client or ArenaMCPClient()
         self.config_path = config_path
 
+    def close(self) -> None:
+        self.client.close()
+
+    def __enter__(self) -> "ArenaAgent":
+        self.client.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
     def state(self):
         return as_view(self._call("varsity.market_state"))
 

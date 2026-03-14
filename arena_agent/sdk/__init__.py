@@ -2,4 +2,6 @@
 
 from arena_agent.sdk.agent import ArenaAgent
 
-__all__ = ["ArenaAgent"]
+Arena = ArenaAgent
+
+__all__ = ["Arena", "ArenaAgent"]

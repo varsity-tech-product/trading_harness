@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from arena_agent.sdk.agent import ArenaAgent
+from arena_agent import Arena, ArenaAgent
 
 
 class FakeClient:
@@ -26,7 +26,9 @@ class FakeClient:
             }
         if name == "varsity.market_state":
             return {
-                "market": {"last_price": 100.0, "orderbook_imbalance": 0.3},
+                "market": {"last_price": 100.0, "orderbook_imbalance": 0.3, "symbol": "BTCUSDT", "recent_candles": []},
+                "account": {"unrealized_pnl": 5.0, "equity": 1005.0, "balance": 1000.0, "trade_count": 1},
+                "competition": {"max_trades_remaining": 39, "time_remaining_seconds": 60.0},
                 "position": None,
             }
         if name == "varsity.trade_action":
@@ -48,6 +50,9 @@ class SDKTest(unittest.TestCase):
 
         self.assertEqual(info.symbol, "BTCUSDT")
         self.assertEqual(state.market.last_price, 100.0)
+        self.assertEqual(state.price, 100.0)
+        self.assertEqual(state.remaining_trades, 39)
+        self.assertEqual(state.pnl, 5.0)
 
     def test_action_helpers_delegate_to_trade_tool(self) -> None:
         client = FakeClient()
@@ -67,6 +72,9 @@ class SDKTest(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].action.type, "OPEN_LONG")
+
+    def test_arena_alias_points_to_same_sdk(self) -> None:
+        self.assertIs(Arena, ArenaAgent)
 
 
 if __name__ == "__main__":

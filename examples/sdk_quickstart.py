@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from arena_agent.sdk import ArenaAgent
+from arena_agent import Arena
 
 
 def simple_policy(state):
@@ -17,6 +17,6 @@ def simple_policy(state):
 
 
 if __name__ == "__main__":
-    agent = ArenaAgent()
+    agent = Arena()
     print(agent.competition_info().to_dict())
     print(agent.run(simple_policy, max_steps=1))
