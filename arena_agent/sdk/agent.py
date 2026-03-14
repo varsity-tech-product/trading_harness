@@ -10,9 +10,15 @@ from arena_agent.sdk.views import as_view
 
 
 class ArenaAgent:
-    def __init__(self, client: ArenaMCPClient | None = None, config_path: str | None = None) -> None:
+    def __init__(
+        self,
+        client: ArenaMCPClient | None = None,
+        config_path: str | None = None,
+        signal_indicators: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.client = client or ArenaMCPClient()
         self.config_path = config_path
+        self.signal_indicators = list(signal_indicators or [])
 
     def disconnect(self) -> None:
         self.client.close()
@@ -108,4 +114,6 @@ class ArenaAgent:
         arguments = dict(arguments or {})
         if self.config_path is not None:
             arguments.setdefault("config_path", self.config_path)
+        if self.signal_indicators:
+            arguments.setdefault("signal_indicators", self.signal_indicators)
         return self.client.call_tool(tool_name, arguments)

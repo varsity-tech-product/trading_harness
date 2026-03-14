@@ -43,6 +43,7 @@ def _lookup_alias(data: dict[str, Any], item: str) -> Any:
         "price": ("market", "last_price"),
         "candles": ("market", "recent_candles"),
         "symbol": ("market", "symbol"),
+        "features": ("signal_state", "values"),
         "pnl": ("account", "unrealized_pnl"),
         "equity": ("account", "equity"),
         "balance": ("account", "balance"),

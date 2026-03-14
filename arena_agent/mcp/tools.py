@@ -7,13 +7,13 @@ from arena_agent.interfaces.action_schema import Action, ActionType
 from arena_agent.skills.shared import build_runtime_components, read_last_transition
 
 
-def market_state(config_path: str | None = None):
-    _, _, state_builder, _, _, _ = build_runtime_components(config_path)
+def market_state(config_path: str | None = None, signal_indicators: list[dict] | None = None):
+    _, _, state_builder, _, _, _ = build_runtime_components(config_path, signal_indicators=signal_indicators)
     return state_builder.build()
 
 
-def competition_info(config_path: str | None = None):
-    state = market_state(config_path)
+def competition_info(config_path: str | None = None, signal_indicators: list[dict] | None = None):
+    state = market_state(config_path, signal_indicators=signal_indicators)
     return {
         "competition_id": state.competition.competition_id,
         "symbol": state.competition.symbol,
@@ -35,8 +35,12 @@ def trade_action(
     sl: float | None = None,
     execute: bool = False,
     config_path: str | None = None,
+    signal_indicators: list[dict] | None = None,
 ):
-    config, _, state_builder, executor, transition_store, _ = build_runtime_components(config_path)
+    config, _, state_builder, executor, transition_store, _ = build_runtime_components(
+        config_path,
+        signal_indicators=signal_indicators,
+    )
     executor.dry_run = config.dry_run if not execute else False
 
     state_before = state_builder.build()

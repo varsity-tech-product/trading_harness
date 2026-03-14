@@ -29,12 +29,12 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
     )
 
     @mcp.tool(name="varsity.market_state", description="Get the current Arena market and account state.")
-    def market_state(config_path: str | None = None) -> dict:
-        return to_jsonable(tools.market_state(config_path))
+    def market_state(config_path: str | None = None, signal_indicators: list[dict] | None = None) -> dict:
+        return to_jsonable(tools.market_state(config_path, signal_indicators=signal_indicators))
 
     @mcp.tool(name="varsity.competition_info", description="Get compact Arena competition metadata.")
-    def competition_info(config_path: str | None = None) -> dict:
-        return to_jsonable(tools.competition_info(config_path))
+    def competition_info(config_path: str | None = None, signal_indicators: list[dict] | None = None) -> dict:
+        return to_jsonable(tools.competition_info(config_path, signal_indicators=signal_indicators))
 
     @mcp.tool(name="varsity.trade_action", description="Submit a trading action to Arena.")
     def trade_action(
@@ -44,8 +44,19 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
         sl: float | None = None,
         execute: bool = False,
         config_path: str | None = None,
+        signal_indicators: list[dict] | None = None,
     ) -> dict:
-        return to_jsonable(tools.trade_action(type=type, size=size, tp=tp, sl=sl, execute=execute, config_path=config_path))
+        return to_jsonable(
+            tools.trade_action(
+                type=type,
+                size=size,
+                tp=tp,
+                sl=sl,
+                execute=execute,
+                config_path=config_path,
+                signal_indicators=signal_indicators,
+            )
+        )
 
     @mcp.tool(name="varsity.last_transition", description="Get the last stored transition.")
     def last_transition(config_path: str | None = None) -> dict:

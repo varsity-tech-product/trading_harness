@@ -48,6 +48,10 @@ The runtime is intentionally small:
 
 The runtime does not own reward logic. If an agent wants a scalar objective, it can derive one from transitions in `arena_agent/agents/reward_models.py`.
 
+The runtime now also owns a versioned `signal_state` contract. Agents can request a curated set of indicators and parameters, and the framework computes them centrally through the feature engine.
+
+If TA-Lib is available in the runtime environment, the engine can serve the full TA-Lib surface. Indicators that need extra non-OHLCV inputs, such as `MAVP`, can still be used by supplying those series explicitly in the indicator params.
+
 ## External-agent support
 
 There is a minimal TAP layer in `arena_agent/tap/` for plug-in agents.
@@ -79,6 +83,7 @@ Examples:
 ./arena_trade --action HOLD
 echo '{"action":"OPEN_LONG","size":0.001}' | ./arena_trade --execute
 ./arena_last_transition
+./arena_market_state --signal-indicators '[{"indicator":"SMA","params":{"period":20}},{"indicator":"RSI","params":{"period":14}}]'
 ```
 
 ## MCP server
@@ -106,6 +111,8 @@ Or over HTTP:
 
 The server reuses the same local runtime env file and underlying runtime components as the CLI skills.
 
+Both CLI tools and MCP tools accept optional `signal_indicators` input so agents can request the indicator bundle they want without changing the runtime code.
+
 ## Arena Agent SDK
 
 There is also a thin SDK on top of the MCP layer in `arena_agent/sdk/`.
@@ -131,6 +138,22 @@ if state.position is None and state.price > 0 and state.market.orderbook_imbalan
     agent.long(size=0.001)
 else:
     agent.hold()
+```
+
+Signal features are available under:
+
+```python
+state.signal_state.values["sma_20"]
+state.features.sma_20
+```
+
+For indicators with long or structured params, set an explicit key:
+
+```python
+agent = Arena(signal_indicators=[
+    {"indicator": "MACD", "key": "macd_fast", "params": {"fast_period": 12, "slow_period": 26, "signal_period": 9}},
+    {"indicator": "MAVP", "key": "mavp_test", "params": {"minperiod": 2, "maxperiod": 5, "periods": [2] * 120}},
+])
 ```
 
 Optional loop helper:
@@ -193,6 +216,7 @@ Local verification currently passes:
 Current automated tests cover:
 
 - state normalization
+- versioned signal-state contract
 - inferred position fallback from unresolved live trades
 - execution sizing and validation
 - transition-oriented runtime flow

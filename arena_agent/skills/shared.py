@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any
 
 from arena_agent.config_loader import load_runtime_config
 from arena_agent.core.environment_adapter import EnvironmentAdapter
-from arena_agent.core.models import RuntimeConfig, TransitionEvent
+from arena_agent.core.models import FeatureSpec, RuntimeConfig, TransitionEvent
 from arena_agent.core.runtime_loop import MarketRuntime
 from arena_agent.core.serialization import to_jsonable
 from arena_agent.core.state_builder import StateBuilder
@@ -45,10 +46,15 @@ def require_runtime_environment() -> None:
         raise SystemExit("VARSITY_API_KEY must be injected via the runtime environment.")
 
 
-def build_runtime_components(config_path: str | None = None):
+def build_runtime_components(config_path: str | None = None, signal_indicators: list[dict[str, Any]] | None = None):
     load_local_runtime_env()
     require_runtime_environment()
     config = load_runtime_config(config_path or str(DEFAULT_CONFIG))
+    if signal_indicators is not None:
+        config = replace(
+            config,
+            signal_indicators=[FeatureSpec.from_mapping(item) for item in signal_indicators],
+        )
     adapter = EnvironmentAdapter(
         retry_attempts=config.adapter_retry_attempts,
         retry_backoff_seconds=config.adapter_retry_backoff_seconds,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 from arena_agent.core.runtime_loop import build_transition_event
 from arena_agent.skills.shared import (
@@ -20,6 +21,7 @@ def main() -> None:
     parser.add_argument("--size", type=float, default=None)
     parser.add_argument("--tp", type=float, default=None)
     parser.add_argument("--sl", type=float, default=None)
+    parser.add_argument("--signal-indicators", default=None, help="JSON array of requested indicator specs.")
     parser.add_argument(
         "--execute",
         action=argparse.BooleanOptionalAction,
@@ -28,7 +30,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config, _, state_builder, executor, transition_store, _ = build_runtime_components(args.config)
+    signal_indicators = json.loads(args.signal_indicators) if args.signal_indicators else None
+    config, _, state_builder, executor, transition_store, _ = build_runtime_components(
+        args.config,
+        signal_indicators=signal_indicators,
+    )
     executor.dry_run = config.dry_run if not args.execute else False
 
     state_before = state_builder.build()

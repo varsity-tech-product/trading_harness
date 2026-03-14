@@ -17,12 +17,14 @@ from arena_agent.core.models import (
     PositionSnapshot,
     RuntimeConfig,
 )
+from arena_agent.features.engine import FeatureEngine
 
 
 class StateBuilder:
     def __init__(self, adapter: EnvironmentAdapter, config: RuntimeConfig) -> None:
         self.adapter = adapter
         self.config = config
+        self.feature_engine = FeatureEngine(config.signal_indicators)
 
     def build(self) -> AgentState:
         market_info = self.adapter.get_market_info(self.config.symbol)
@@ -39,6 +41,7 @@ class StateBuilder:
 
         candles = self._parse_candles(klines_payload)
         market_snapshot = self._build_market_snapshot(market_info, orderbook, candles)
+        signal_state = self.feature_engine.compute(candles)
         account_snapshot = self._build_account_snapshot(account, trades)
         position_snapshot = self._build_position_snapshot(position, trades, account_snapshot)
         competition_snapshot = self._build_competition_snapshot(competition, account_snapshot, trades)
@@ -46,6 +49,7 @@ class StateBuilder:
         return AgentState(
             timestamp=time.time(),
             market=market_snapshot,
+            signal_state=signal_state,
             account=account_snapshot,
             position=position_snapshot,
             competition=competition_snapshot,

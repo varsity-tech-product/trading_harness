@@ -159,6 +159,27 @@ class StateBuilderTest(unittest.TestCase):
         self.assertTrue(state.position.metadata["inferred"])
         self.assertEqual(state.account.trade_count, 2)
 
+    def test_build_includes_signal_state(self) -> None:
+        config = RuntimeConfig.from_mapping(
+            {
+                "competition_id": 4,
+                "symbol": "BTCUSDT",
+                "signal_indicators": [
+                    {"indicator": "SMA", "params": {"period": 2}},
+                    {"indicator": "OBV", "params": {}},
+                ],
+            }
+        )
+        adapter = EnvironmentAdapter(client=FakeArenaClient())
+        builder = StateBuilder(adapter, config)
+
+        state = builder.build()
+
+        self.assertEqual(state.signal_state.version, "signal_state.v1")
+        self.assertTrue(state.signal_state.warmup_complete)
+        self.assertAlmostEqual(state.signal_state.values["sma_2"], 103.5)
+        self.assertAlmostEqual(state.signal_state.values["obv"], 23.0)
+
 
 if __name__ == "__main__":
     unittest.main()

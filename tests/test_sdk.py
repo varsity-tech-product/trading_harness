@@ -28,6 +28,7 @@ class FakeClient:
         if name == "varsity.market_state":
             return {
                 "market": {"last_price": 100.0, "orderbook_imbalance": 0.3, "symbol": "BTCUSDT", "recent_candles": []},
+                "signal_state": {"version": "signal_state.v1", "backend": "builtin", "requested": [], "values": {"sma_20": 101.0}, "warmup_complete": True},
                 "account": {"unrealized_pnl": 5.0, "equity": 1005.0, "balance": 1000.0, "trade_count": 1},
                 "competition": {"max_trades_remaining": 39, "time_remaining_seconds": 60.0},
                 "position": None,
@@ -61,6 +62,7 @@ class SDKTest(unittest.TestCase):
         self.assertEqual(info.symbol, "BTCUSDT")
         self.assertEqual(state.market.last_price, 100.0)
         self.assertEqual(state.price, 100.0)
+        self.assertEqual(state.features.sma_20, 101.0)
         self.assertEqual(state.remaining_trades, 39)
         self.assertEqual(state.pnl, 5.0)
 
@@ -82,6 +84,14 @@ class SDKTest(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].action.type, "OPEN_LONG")
+
+    def test_signal_indicators_are_forwarded(self) -> None:
+        client = FakeClient()
+        agent = ArenaAgent(client=client, signal_indicators=[{"indicator": "SMA", "params": {"period": 20}}])
+
+        agent.state()
+
+        self.assertEqual(client.calls[-1][1]["signal_indicators"][0]["indicator"], "SMA")
 
     def test_arena_alias_points_to_same_sdk(self) -> None:
         self.assertIs(Arena, ArenaAgent)

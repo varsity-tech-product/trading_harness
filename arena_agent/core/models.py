@@ -68,12 +68,49 @@ class CompetitionSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class FeatureSpec:
+    indicator: str
+    params: dict[str, Any] = field(default_factory=dict)
+    key: str | None = None
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any]) -> "FeatureSpec":
+        return cls(
+            indicator=str(data["indicator"]),
+            params=dict(data.get("params", {})),
+            key=data.get("key"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SignalState:
+    version: str
+    backend: str
+    requested: list[FeatureSpec]
+    values: dict[str, Any]
+    warmup_complete: bool
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def empty(cls, requested: list[FeatureSpec] | None = None) -> "SignalState":
+        return cls(
+            version="signal_state.v1",
+            backend="none",
+            requested=list(requested or []),
+            values={},
+            warmup_complete=True,
+            metadata={},
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AgentState:
     timestamp: float
     market: MarketSnapshot
     account: AccountSnapshot
     position: PositionSnapshot | None
     competition: CompetitionSnapshot
+    signal_state: SignalState = field(default_factory=SignalState.empty)
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -139,6 +176,7 @@ class RuntimeConfig:
     adapter_retry_attempts: int = 3
     adapter_retry_backoff_seconds: float = 0.5
     adapter_min_call_spacing_seconds: float = 0.0
+    signal_indicators: list[FeatureSpec] = field(default_factory=list)
     risk_limits: RiskLimits = field(default_factory=RiskLimits)
     storage: StorageConfig = field(default_factory=StorageConfig)
     policy: dict[str, Any] = field(default_factory=dict)
@@ -159,6 +197,10 @@ class RuntimeConfig:
             adapter_retry_attempts=int(data.get("adapter_retry_attempts", 3)),
             adapter_retry_backoff_seconds=float(data.get("adapter_retry_backoff_seconds", 0.5)),
             adapter_min_call_spacing_seconds=float(data.get("adapter_min_call_spacing_seconds", 0.0)),
+            signal_indicators=[
+                FeatureSpec.from_mapping(item)
+                for item in data.get("signal_indicators", data.get("features", []))
+            ],
             risk_limits=RiskLimits.from_mapping(data.get("risk_limits")),
             storage=StorageConfig.from_mapping(data.get("storage")),
             policy=dict(data.get("policy", {})),

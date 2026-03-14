@@ -1,0 +1,163 @@
+"""Indicator metadata and key generation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
+
+
+@dataclass(frozen=True, slots=True)
+class IndicatorDefinition:
+    name: str
+    outputs: tuple[str, ...]
+    required_inputs: tuple[str, ...]
+
+
+REGISTRY: dict[str, IndicatorDefinition] = {
+    "SMA": IndicatorDefinition("SMA", ("value",), ("close",)),
+    "EMA": IndicatorDefinition("EMA", ("value",), ("close",)),
+    "RSI": IndicatorDefinition("RSI", ("value",), ("close",)),
+    "MACD": IndicatorDefinition("MACD", ("macd", "signal", "hist"), ("close",)),
+    "BBANDS": IndicatorDefinition("BBANDS", ("upper", "middle", "lower"), ("close",)),
+    "ATR": IndicatorDefinition("ATR", ("value",), ("high", "low", "close")),
+    "OBV": IndicatorDefinition("OBV", ("value",), ("close", "volume")),
+    "RETURNS": IndicatorDefinition("RETURNS", ("value",), ("close",)),
+    "VOLATILITY": IndicatorDefinition("VOLATILITY", ("value",), ("close",)),
+}
+
+SUPPORTED_BASE_INPUTS = {"open", "high", "low", "close", "volume"}
+
+
+def normalize_indicator_name(name: str) -> str:
+    return str(name).upper()
+
+
+def normalize_params(params: dict[str, Any]) -> dict[str, Any]:
+    aliases = {
+        "period": "timeperiod",
+        "fast_period": "fastperiod",
+        "slow_period": "slowperiod",
+        "signal_period": "signalperiod",
+        "nbdev_up": "nbdevup",
+        "nbdev_down": "nbdevdn",
+    }
+    normalized = {}
+    for key, value in params.items():
+        normalized[aliases.get(key, key)] = value
+    return normalized
+
+
+def feature_key(indicator: str, params: dict[str, Any], explicit_key: str | None = None) -> str:
+    if explicit_key:
+        return explicit_key
+
+    indicator_name = normalize_indicator_name(indicator)
+    params = normalize_params(params)
+
+    if indicator_name in {"SMA", "EMA", "RSI", "ATR", "VOLATILITY"}:
+        return f"{indicator_name.lower()}_{int(params.get('timeperiod', 14))}"
+    if indicator_name == "MACD":
+        return "macd_{fast}_{slow}_{signal}".format(
+            fast=int(params.get("fastperiod", 12)),
+            slow=int(params.get("slowperiod", 26)),
+            signal=int(params.get("signalperiod", 9)),
+        )
+    if indicator_name == "BBANDS":
+        return "bbands_{period}_{up:g}_{dn:g}".format(
+            period=int(params.get("timeperiod", 20)),
+            up=float(params.get("nbdevup", 2.0)),
+            dn=float(params.get("nbdevdn", 2.0)),
+        )
+    if indicator_name == "OBV":
+        return "obv"
+    if indicator_name == "RETURNS":
+        return f"returns_{int(params.get('timeperiod', 1))}"
+
+    if not params:
+        return indicator_name.lower()
+    rendered = "_".join(f"{key}_{params[key]}" for key in sorted(params))
+    return f"{indicator_name.lower()}_{rendered}"
+
+
+def lookback_required(indicator: str, params: dict[str, Any]) -> int:
+    talib_lookback = talib_lookback_required(indicator, params)
+    if talib_lookback is not None:
+        return talib_lookback
+
+    indicator_name = normalize_indicator_name(indicator)
+    params = normalize_params(params)
+
+    if indicator_name in {"SMA", "EMA", "RSI", "ATR", "BBANDS", "VOLATILITY"}:
+        return int(params.get("timeperiod", 14))
+    if indicator_name == "MACD":
+        return int(params.get("slowperiod", 26)) + int(params.get("signalperiod", 9))
+    if indicator_name == "RETURNS":
+        return int(params.get("timeperiod", 1)) + 1
+    if indicator_name == "OBV":
+        return 1
+    return 1
+
+
+def get_indicator_definition(indicator: str) -> IndicatorDefinition | None:
+    indicator_name = normalize_indicator_name(indicator)
+    if indicator_name in REGISTRY:
+        return REGISTRY[indicator_name]
+
+    talib_info = talib_indicator_info(indicator_name)
+    if talib_info is None:
+        return None
+    outputs = tuple(str(name) for name in talib_info["output_names"])
+    inputs = tuple(sorted(_flatten_input_names(talib_info["input_names"])))
+    return IndicatorDefinition(indicator_name, outputs, inputs)
+
+
+@lru_cache(maxsize=256)
+def talib_indicator_info(indicator: str) -> dict[str, Any] | None:
+    try:
+        from talib import abstract  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        function = abstract.Function(normalize_indicator_name(indicator))
+    except Exception:
+        return None
+    return dict(function.info)
+
+
+def talib_lookback_required(indicator: str, params: dict[str, Any]) -> int | None:
+    try:
+        from talib import abstract  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        function = abstract.Function(normalize_indicator_name(indicator))
+        function.set_parameters(normalize_params(params))
+        return int(function.lookback)
+    except Exception:
+        return None
+
+
+def indicator_requires_supported_inputs(indicator: str, params: dict[str, Any] | None = None) -> tuple[bool, list[str]]:
+    definition = get_indicator_definition(indicator)
+    if definition is None:
+        return False, []
+    params = normalize_params(params or {})
+    unsupported = sorted(
+        name
+        for name in definition.required_inputs
+        if name not in SUPPORTED_BASE_INPUTS and name not in params
+    )
+    return len(unsupported) == 0, unsupported
+
+
+def _flatten_input_names(input_names: Any) -> set[str]:
+    names: set[str] = set()
+    for value in input_names.values():
+        if isinstance(value, list):
+            names.update(str(item) for item in value)
+        else:
+            names.add(str(value))
+    return names
