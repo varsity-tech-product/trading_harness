@@ -28,7 +28,7 @@ signal_indicators:
 policy:
   type: tap_http
   endpoint: http://127.0.0.1:8080/decision
-  timeout_seconds: 10
+  timeout_seconds: 60
   fail_open_to_hold: true
   headers:
     Content-Type: application/json
