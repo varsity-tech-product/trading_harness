@@ -90,6 +90,41 @@ class FakeArenaClient:
         }
 
 
+class InferredPositionArenaClient(FakeArenaClient):
+    def get_live_position(self, competition_id: int):
+        return None
+
+    def get_live_account(self, competition_id: int):
+        return {
+            "availableBalance": 1000.0,
+            "equity": 1015.0,
+            "unrealizedPnl": 15.0,
+            "tradesCount": 2,
+        }
+
+    def get_live_trades(self, competition_id: int):
+        return [
+            {
+                "id": "open-a",
+                "direction": "long",
+                "size": 0.001,
+                "entryPrice": 100.0,
+                "exitPrice": None,
+                "closeTime": None,
+                "pnl": 4.0,
+            },
+            {
+                "id": "open-b",
+                "direction": "long",
+                "size": 0.002,
+                "entryPrice": 103.0,
+                "exitPrice": None,
+                "closeTime": None,
+                "pnl": 6.0,
+            },
+        ]
+
+
 class StateBuilderTest(unittest.TestCase):
     def test_build_normalizes_market_account_position_and_competition(self) -> None:
         config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
@@ -107,6 +142,22 @@ class StateBuilderTest(unittest.TestCase):
         self.assertEqual(state.position.direction, "long")
         self.assertEqual(state.competition.max_trades_remaining, 8)
         self.assertTrue(state.competition.is_live)
+
+    def test_build_infers_position_from_unresolved_trades(self) -> None:
+        config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
+        adapter = EnvironmentAdapter(client=InferredPositionArenaClient())
+        builder = StateBuilder(adapter, config)
+
+        state = builder.build()
+
+        self.assertIsNotNone(state.position)
+        assert state.position is not None
+        self.assertEqual(state.position.direction, "long")
+        self.assertAlmostEqual(state.position.size, 0.003)
+        self.assertAlmostEqual(state.position.entry_price, 102.0)
+        self.assertAlmostEqual(state.position.unrealized_pnl, 10.0)
+        self.assertTrue(state.position.metadata["inferred"])
+        self.assertEqual(state.account.trade_count, 2)
 
 
 if __name__ == "__main__":

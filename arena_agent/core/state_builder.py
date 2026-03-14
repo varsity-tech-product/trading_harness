@@ -40,7 +40,7 @@ class StateBuilder:
         candles = self._parse_candles(klines_payload)
         market_snapshot = self._build_market_snapshot(market_info, orderbook, candles)
         account_snapshot = self._build_account_snapshot(account, trades)
-        position_snapshot = self._build_position_snapshot(position, account_snapshot)
+        position_snapshot = self._build_position_snapshot(position, trades, account_snapshot)
         competition_snapshot = self._build_competition_snapshot(competition, account_snapshot, trades)
 
         return AgentState(
@@ -91,6 +91,7 @@ class StateBuilder:
         realized_pnl = _first_float(account, "realizedPnl", "realized_pnl", default=0.0)
         trade_count = int(
             account.get("tradeCount")
+            or account.get("tradesCount")
             or account.get("currentTrades")
             or account.get("trades")
             or len(trades)
@@ -107,10 +108,11 @@ class StateBuilder:
     def _build_position_snapshot(
         self,
         position: dict[str, Any] | None,
+        trades: list[dict[str, Any]],
         account_snapshot: AccountSnapshot,
     ) -> PositionSnapshot | None:
         if not position:
-            return None
+            return self._infer_position_from_trades(trades, account_snapshot)
 
         direction = str(position.get("direction") or position.get("positionSide") or "").lower()
         if direction == "long":
@@ -131,6 +133,50 @@ class StateBuilder:
             metadata=position,
         )
 
+    def _infer_position_from_trades(
+        self,
+        trades: list[dict[str, Any]],
+        account_snapshot: AccountSnapshot,
+    ) -> PositionSnapshot | None:
+        unresolved = [trade for trade in trades if _trade_is_unresolved(trade)]
+        if not unresolved:
+            return None
+
+        net_size = 0.0
+        weighted_entry = 0.0
+        total_size = 0.0
+        unresolved_pnl = 0.0
+
+        for trade in unresolved:
+            size = _first_float(trade, "size")
+            if size <= 0:
+                continue
+            direction = str(trade.get("direction", "")).lower()
+            sign = 1.0 if direction == "long" else -1.0 if direction == "short" else 0.0
+            if sign == 0.0:
+                continue
+            entry_price = _first_float(trade, "entryPrice", "entry_price")
+            net_size += sign * size
+            total_size += size
+            weighted_entry += entry_price * size
+            unresolved_pnl += _optional_float(trade.get("pnl")) or 0.0
+
+        if math.isclose(net_size, 0.0) or math.isclose(total_size, 0.0):
+            return None
+
+        return PositionSnapshot(
+            direction="long" if net_size > 0 else "short",
+            size=abs(net_size),
+            entry_price=weighted_entry / total_size,
+            unrealized_pnl=unresolved_pnl if not math.isclose(unresolved_pnl, 0.0) else account_snapshot.unrealized_pnl,
+            metadata={
+                "inferred": True,
+                "source": "live_trades",
+                "unresolved_trade_count": len(unresolved),
+                "trades": unresolved,
+            },
+        )
+
     def _build_competition_snapshot(
         self,
         competition: dict[str, Any],
@@ -146,7 +192,13 @@ class StateBuilder:
             or account_snapshot.trade_count
             or len(trades)
         )
-        max_trades_value = source.get("maxTrades") or competition.get("maxTrades") or self.config.risk_limits.max_trades
+        max_trades_value = (
+            source.get("maxTrades")
+            or source.get("maxTradesPerMatch")
+            or competition.get("maxTrades")
+            or competition.get("maxTradesPerMatch")
+            or self.config.risk_limits.max_trades
+        )
         max_trades = None if max_trades_value is None else int(max_trades_value)
 
         close_only_at_seconds = _milliseconds_to_seconds(source.get("closeOnlyAt") or competition.get("closeOnlyAt"))
@@ -159,6 +211,9 @@ class StateBuilder:
             or competition.get("closeOnly")
         )
         end_time_seconds = _milliseconds_to_seconds(source.get("endTime") or competition.get("endTime"))
+        close_only_seconds = _optional_float(source.get("closeOnlySeconds") or competition.get("closeOnlySeconds"))
+        if close_only_at_seconds is None and end_time_seconds is not None and close_only_seconds is not None:
+            close_only_at_seconds = end_time_seconds - close_only_seconds
         now = time.time()
         time_remaining = None if end_time_seconds is None else max(0.0, end_time_seconds - now)
         if close_only_at_seconds is not None and now >= close_only_at_seconds:
@@ -256,3 +311,7 @@ def _milliseconds_to_seconds(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return numeric / 1000.0
+
+
+def _trade_is_unresolved(trade: dict[str, Any]) -> bool:
+    return trade.get("closeTime") is None or trade.get("exitPrice") is None

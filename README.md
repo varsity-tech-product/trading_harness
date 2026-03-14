@@ -65,6 +65,22 @@ export VARSITY_API_KEY='...'
 python3 -m arena_agent --config arena_agent/config/agent_config.yaml
 ```
 
+For local convenience, this repo also supports an ignored runtime env file:
+
+- `.env.runtime.local`
+- `.env.runtime.local.example`
+- `run_live_tap_once.sh`
+
+`run_live_tap_once.sh` sources `.env.runtime.local`, starts the local Claude-backed TAP server, and runs one or more runtime iterations without re-entering secrets manually.
+
+Example:
+
+```bash
+cp .env.runtime.local.example .env.runtime.local
+# fill in VARSITY_API_KEY and CLAUDE_CODE_OAUTH_TOKEN once
+./run_live_tap_once.sh 1
+```
+
 ## Verification status
 
 Local verification currently passes:
@@ -75,6 +91,7 @@ Local verification currently passes:
 Current automated tests cover:
 
 - state normalization
+- inferred position fallback from unresolved live trades
 - execution sizing and validation
 - transition-oriented runtime flow
 - optional reward derivation from transitions
@@ -83,7 +100,8 @@ Current automated tests cover:
 
 ## Known limitations
 
-- Live Arena end-to-end execution has not been verified from this environment because outbound DNS/network access to `api-staging.varsity.lol` was blocked in the sandbox.
+- Live Arena reads and one dry-run TAP-backed runtime iteration have been verified from this environment.
+- Real Arena trade writes have not been exercised yet.
 - The repo still contains legacy script bots alongside the new runtime.
 - The repo currently includes generated files and caches from earlier work; cleanup has not been completed yet.
 
@@ -99,4 +117,5 @@ arena_agent/
   tap/          minimal external-agent HTTP adapter
   config/       sample configs
 tests/          unit tests for runtime, executor, state builder, TAP
+run_live_tap_once.sh
 ```
