@@ -37,6 +37,11 @@ class FakeAdapter:
         return {"takeProfit": take_profit, "stopLoss": stop_loss}
 
 
+class ErroringAdapter(FakeAdapter):
+    def trade_close(self, competition_id):
+        raise RuntimeError("no position")
+
+
 def make_state(position: PositionSnapshot | None = None, equity: float = 1000.0) -> AgentState:
     return AgentState(
         timestamp=time.time(),
@@ -175,6 +180,21 @@ class ExecutorAndRewardTest(unittest.TestCase):
             ),
         )
         self.assertLess(invalid_reward, 0.0)
+
+    def test_executor_converts_adapter_errors_to_rejected_results(self) -> None:
+        executor = OrderExecutor(
+            adapter=ErroringAdapter(),
+            competition_id=4,
+            risk_limits=RiskLimits(),
+            dry_run=False,
+        )
+        result = executor.execute(
+            Action(type=ActionType.CLOSE_POSITION),
+            make_state(position=PositionSnapshot("long", 1.0, 100.0, 0.0)),
+        )
+        self.assertFalse(result.accepted)
+        self.assertFalse(result.executed)
+        self.assertIn("trade_close failed", result.message)
 
 
 if __name__ == "__main__":

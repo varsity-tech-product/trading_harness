@@ -90,7 +90,7 @@ class StateBuilder:
         trades: list[dict[str, Any]],
     ) -> AccountSnapshot:
         balance = _first_float(account, "walletBalance", "availableBalance", "balance", "capital")
-        equity = _first_float(account, "totalEquity", "equity", default=balance)
+        equity = _first_float(account, "totalEquity", "equity", "capital", default=balance)
         unrealized_pnl = _first_float(account, "unrealizedPnl", "unrealized_pnl", default=0.0)
         realized_pnl = _first_float(account, "realizedPnl", "realized_pnl", default=0.0)
         trade_count = int(
@@ -144,6 +144,11 @@ class StateBuilder:
     ) -> PositionSnapshot | None:
         unresolved = [trade for trade in trades if _trade_is_unresolved(trade)]
         if not unresolved:
+            return None
+
+        has_unrealized_signal = not math.isclose(account_snapshot.unrealized_pnl, 0.0, abs_tol=1e-9)
+        has_recent_unresolved_trade = any(_trade_is_recent(trade) for trade in unresolved)
+        if not has_unrealized_signal and not has_recent_unresolved_trade:
             return None
 
         net_size = 0.0
@@ -319,3 +324,13 @@ def _milliseconds_to_seconds(value: Any) -> float | None:
 
 def _trade_is_unresolved(trade: dict[str, Any]) -> bool:
     return trade.get("closeTime") is None or trade.get("exitPrice") is None
+
+
+def _trade_is_recent(trade: dict[str, Any], *, recent_seconds: int = 900) -> bool:
+    open_time = trade.get("openTime")
+    if open_time is None:
+        return False
+    try:
+        return (time.time() - (float(open_time) / 1000.0)) <= recent_seconds
+    except (TypeError, ValueError):
+        return False

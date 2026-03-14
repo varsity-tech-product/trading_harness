@@ -115,6 +115,14 @@ There is a minimal TAP layer in `arena_agent/tap/` for plug-in agents.
 
 This is deliberately minimal and not a larger protocol framework.
 
+For the local Claude-backed TAP server in `arena_agent/tap/local_claude_server.py`, the response is normalized so each action includes:
+
+- `action.metadata.reason`
+- `action.metadata.raw_claude_response`
+- `action.metadata.claude_model`
+
+That makes live trading decisions auditable after the fact through the transition journal.
+
 ## Local skill tools
 
 The repo now exposes the runtime as local CLI tools for Codex-style tool use. These tools auto-load `.env.runtime.local` when present and keep secrets in the local host environment rather than passing them to the model.
@@ -292,14 +300,17 @@ Current automated tests cover:
 - transition-oriented runtime flow
 - optional reward derivation from transitions
 - TAP request/response translation
+- Claude decision rationale capture and normalization
 - TAP HTTP fallback behavior
 - MCP tool wrappers
 - SDK view and action helpers
 
 ## Known limitations
 
-- Live Arena reads, MCP calls, SDK calls, and requested indicator computation have been verified from this environment.
-- Real Arena trade writes have not been exercised yet.
+- Live Arena reads, MCP calls, SDK calls, requested indicator computation, and real Arena trade writes have been exercised from this environment.
+- A live Claude-driven run opened and managed real positions successfully, and a Claude-opened live trade was closed profitably in one earlier run.
+- A later 10-minute live validation run confirmed that Claude rationales are now captured in transition data while it opened and managed a real long position.
+- Timed live runs can still end with an open position unless the runner explicitly closes it at shutdown.
 - The repo still contains legacy script bots alongside the new runtime.
 - The repo currently includes generated files and caches from earlier work; cleanup has not been completed yet.
 

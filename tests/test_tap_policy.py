@@ -11,6 +11,7 @@ from arena_agent.core.models import (
     MarketSnapshot,
 )
 from arena_agent.interfaces.action_schema import ActionType
+from arena_agent.tap.local_claude_server import _normalize_claude_payload
 from arena_agent.tap.http_policy import HttpTapPolicy
 from arena_agent.tap.protocol import build_decision_request, parse_decision_response
 
@@ -94,7 +95,8 @@ class TapPolicyTest(unittest.TestCase):
                     "tp": 110.0,
                     "sl": 99.0,
                     "metadata": {"source": "external"},
-                }
+                },
+                "reason": "bullish breakout",
             }
         )
 
@@ -104,6 +106,25 @@ class TapPolicyTest(unittest.TestCase):
         self.assertAlmostEqual(action.size or 0.0, 0.25)
         self.assertAlmostEqual(action.take_profit or 0.0, 110.0)
         self.assertEqual(action.metadata["source"], "external")
+        self.assertEqual(action.metadata["reason"], "bullish breakout")
+
+    def test_local_claude_payload_is_normalized_with_reason_and_raw_response(self) -> None:
+        payload = _normalize_claude_payload(
+            {
+                "action": {
+                    "type": "OPEN_LONG",
+                    "size": 0.1,
+                },
+                "analysis": "RSI recovered and trend remains positive.",
+            },
+            raw_text='{"action":{"type":"OPEN_LONG","size":0.1},"analysis":"RSI recovered and trend remains positive."}',
+            model="sonnet",
+        )
+
+        action = payload["action"]
+        self.assertEqual(action["metadata"]["reason"], "RSI recovered and trend remains positive.")
+        self.assertIn("raw_claude_response", action["metadata"])
+        self.assertEqual(action["metadata"]["claude_model"], "sonnet")
 
     def test_http_tap_policy_posts_to_decision_endpoint(self) -> None:
         session = RecordingSession(

@@ -34,6 +34,10 @@ def parse_decision_response(payload: dict[str, Any]) -> Action:
     metadata = dict(action_payload.get("metadata", {}))
     if "reason" in action_payload and "reason" not in metadata:
         metadata["reason"] = str(action_payload["reason"])
+    if "reason" in payload and "reason" not in metadata:
+        metadata["reason"] = str(payload["reason"])
+    if "analysis" in payload and "reason" not in metadata:
+        metadata["reason"] = str(payload["analysis"])
 
     return Action(
         type=action_type,

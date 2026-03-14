@@ -125,6 +125,40 @@ class InferredPositionArenaClient(FakeArenaClient):
         ]
 
 
+class StaleUnresolvedTradesArenaClient(InferredPositionArenaClient):
+    def get_live_account(self, competition_id: int):
+        return {
+            "availableBalance": 1000.0,
+            "equity": 1000.0,
+            "unrealizedPnl": 0.0,
+            "tradesCount": 2,
+        }
+
+    def get_live_trades(self, competition_id: int):
+        return [
+            {
+                "id": "stale-a",
+                "direction": "long",
+                "size": 0.001,
+                "entryPrice": 100.0,
+                "exitPrice": None,
+                "closeTime": None,
+                "openTime": 1,
+                "pnl": 0.0,
+            },
+            {
+                "id": "stale-b",
+                "direction": "long",
+                "size": 0.002,
+                "entryPrice": 103.0,
+                "exitPrice": None,
+                "closeTime": None,
+                "openTime": 1,
+                "pnl": 0.0,
+            },
+        ]
+
+
 class StateBuilderTest(unittest.TestCase):
     def test_build_normalizes_market_account_position_and_competition(self) -> None:
         config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
@@ -179,6 +213,15 @@ class StateBuilderTest(unittest.TestCase):
         self.assertTrue(state.signal_state.warmup_complete)
         self.assertAlmostEqual(state.signal_state.values["sma_2"], 103.5)
         self.assertAlmostEqual(state.signal_state.values["obv"], 23.0)
+
+    def test_build_does_not_infer_stale_flat_position(self) -> None:
+        config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
+        adapter = EnvironmentAdapter(client=StaleUnresolvedTradesArenaClient())
+        builder = StateBuilder(adapter, config)
+
+        state = builder.build()
+
+        self.assertIsNone(state.position)
 
 
 if __name__ == "__main__":

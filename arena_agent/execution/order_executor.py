@@ -47,13 +47,16 @@ class OrderExecutor:
                 self._last_trade_time = time.time()
                 return self._result(action, True, False, "dry-run open", payload=payload, order_size=size)
 
-            response = self.adapter.trade_open(
-                self.competition_id,
-                action.direction or "",
-                size,
-                take_profit=take_profit,
-                stop_loss=stop_loss,
-            )
+            try:
+                response = self.adapter.trade_open(
+                    self.competition_id,
+                    action.direction or "",
+                    size,
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                )
+            except Exception as exc:
+                return self._result(action, False, False, f"trade_open failed: {exc}", order_size=size, take_profit=take_profit, stop_loss=stop_loss)
             self._last_trade_time = time.time()
             return self._result(
                 action,
@@ -73,7 +76,10 @@ class OrderExecutor:
                 self._last_trade_time = time.time()
                 return self._result(action, True, False, "dry-run close")
 
-            response = self.adapter.trade_close(self.competition_id)
+            try:
+                response = self.adapter.trade_close(self.competition_id)
+            except Exception as exc:
+                return self._result(action, False, False, f"trade_close failed: {exc}")
             self._last_trade_time = time.time()
             return self._result(
                 action,
@@ -99,11 +105,22 @@ class OrderExecutor:
                     stop_loss=stop_loss,
                 )
 
-            response = self.adapter.trade_update_tpsl(
-                self.competition_id,
-                take_profit=take_profit,
-                stop_loss=stop_loss,
-            )
+            try:
+                response = self.adapter.trade_update_tpsl(
+                    self.competition_id,
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                )
+            except Exception as exc:
+                return self._result(
+                    action,
+                    False,
+                    False,
+                    f"trade_update_tpsl failed: {exc}",
+                    order_size=state.position.size if state.position else None,
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                )
             return self._result(
                 action,
                 True,

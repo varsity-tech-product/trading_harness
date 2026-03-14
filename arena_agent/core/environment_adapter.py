@@ -96,6 +96,7 @@ class EnvironmentAdapter:
             self._throttle(method_name)
             try:
                 response = method(*args, **kwargs)
+                _raise_if_api_error(response, method_name)
                 if validator and not validator(response):
                     raise ValueError(f"{method_name} returned invalid payload: {response!r}")
                 return response
@@ -128,3 +129,15 @@ def _is_dict(value: Any) -> bool:
 
 def _is_dict_or_list(value: Any) -> bool:
     return isinstance(value, (dict, list))
+
+
+def _raise_if_api_error(value: Any, method_name: str) -> None:
+    if not isinstance(value, dict):
+        return
+    if "code" not in value:
+        return
+    code = value.get("code")
+    if code in (0, None):
+        return
+    message = value.get("message") or value.get("detail") or "unknown Arena API error"
+    raise RuntimeError(f"{method_name} failed with code={code}: {message}")

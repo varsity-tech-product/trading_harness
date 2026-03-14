@@ -18,6 +18,8 @@ def build_prompt(payload: dict[str, Any]) -> str:
         "Allowed action types: HOLD, OPEN_LONG, OPEN_SHORT, CLOSE_POSITION, UPDATE_TPSL. "
         "Prefer HOLD if signal quality is weak or state is ambiguous. "
         "For UPDATE_TPSL include tp/sl. "
+        "Always include a short explanation in action.metadata.reason. "
+        "Example: {\"action\":{\"type\":\"HOLD\",\"metadata\":{\"reason\":\"Momentum is mixed and signal quality is weak.\"}}}. "
         "State JSON: "
         + state_json
     )
@@ -50,14 +52,40 @@ def run_claude(prompt: str, model: str, max_budget_usd: float) -> dict[str, Any]
         body = json.loads(text)
         if not isinstance(body, dict):
             raise ValueError("Claude returned a non-object payload.")
-        return body
+        return _normalize_claude_payload(body, raw_text=text, model=model)
     except Exception:
         return {
             "action": {
                 "type": "HOLD",
-                "metadata": {"reason": "invalid_claude_output", "raw": text[:200]},
+                "metadata": {
+                    "reason": "invalid_claude_output",
+                    "raw_claude_response": text[:1000],
+                    "claude_model": model,
+                },
             }
         }
+
+
+def _normalize_claude_payload(payload: dict[str, Any], *, raw_text: str, model: str) -> dict[str, Any]:
+    action = payload.get("action", payload)
+    if not isinstance(action, dict):
+        raise ValueError("Claude action payload must be an object.")
+
+    normalized = dict(action)
+    metadata = dict(normalized.get("metadata", {}))
+    if "reason" in normalized and "reason" not in metadata:
+        metadata["reason"] = str(normalized["reason"])
+    elif "reason" in payload and "reason" not in metadata:
+        metadata["reason"] = str(payload["reason"])
+    elif "analysis" in payload and "reason" not in metadata:
+        metadata["reason"] = str(payload["analysis"])
+    else:
+        metadata.setdefault("reason", "no_reason_provided")
+
+    metadata.setdefault("raw_claude_response", raw_text[:1000])
+    metadata.setdefault("claude_model", model)
+    normalized["metadata"] = metadata
+    return {"action": normalized}
 
 
 def make_handler(model: str, max_budget_usd: float):
