@@ -1,6 +1,6 @@
 # Arena Trading Agent Runtime
 
-Current status: this repo contains a working v1 trading-agent runtime for the Varsity Arena API, plus the older script-based bots that predate the runtime package. The current runtime also includes a versioned `signal_state.v1` contract backed by a feature engine that prefers TA-Lib when available and falls back to builtin indicators otherwise.
+Current status: this repo contains a working v1 trading-agent runtime for the Varsity Arena API. The current runtime also includes a versioned `signal_state.v1` contract backed by a feature engine that prefers TA-Lib when available and falls back to builtin indicators otherwise.
 
 ## What exists now
 
@@ -36,12 +36,6 @@ Current status: this repo contains a working v1 trading-agent runtime for the Va
 - Terminal monitor:
   - `arena_agent/tui/`
   - `python3 -m arena_agent monitor`
-- Legacy scripts:
-  - `bot_framework.py`
-  - `strategy_1_ma.py`
-  - `strategy_2_rsi.py`
-  - `strategy_3_breakout.py`
-  - `run_all.py`
 
 ## Current architecture
 
