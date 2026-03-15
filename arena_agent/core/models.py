@@ -180,6 +180,7 @@ class RuntimeConfig:
     risk_limits: RiskLimits = field(default_factory=RiskLimits)
     storage: StorageConfig = field(default_factory=StorageConfig)
     policy: dict[str, Any] = field(default_factory=dict)
+    observability: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "RuntimeConfig":
@@ -204,6 +205,7 @@ class RuntimeConfig:
             risk_limits=RiskLimits.from_mapping(data.get("risk_limits")),
             storage=StorageConfig.from_mapping(data.get("storage")),
             policy=dict(data.get("policy", {})),
+            observability=dict(data.get("observability", {})),
         )
 
 

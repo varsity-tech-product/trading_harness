@@ -18,32 +18,10 @@ from arena_agent.core.state_builder import StateBuilder
 from arena_agent.execution.order_executor import OrderExecutor
 from arena_agent.interfaces.action_schema import Action, ActionType
 from arena_agent.memory.transition_store import TransitionStore
+from arena_agent.runtime_env import ROOT_DIR, load_local_runtime_env, require_runtime_environment
 
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_ENV_FILE = ROOT_DIR / ".env.runtime.local"
 DEFAULT_CONFIG = ROOT_DIR / "arena_agent" / "config" / "tap_agent_config.yaml"
-
-
-def load_local_runtime_env(env_file: str | None = None) -> Path | None:
-    path = Path(env_file) if env_file else DEFAULT_ENV_FILE
-    if not path.exists():
-        return None
-
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
-    return path
-
-
-def require_runtime_environment() -> None:
-    if not os.environ.get("VARSITY_API_KEY", "").strip():
-        raise SystemExit("VARSITY_API_KEY must be injected via the runtime environment.")
 
 
 def build_runtime_components(config_path: str | None = None, signal_indicators: list[dict[str, Any]] | None = None):

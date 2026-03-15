@@ -1,0 +1,392 @@
+"""Direct runtime observability stream for terminal monitors."""
+
+from __future__ import annotations
+
+from collections import deque
+import json
+import logging
+import socket
+import threading
+import time
+from typing import Any
+
+from arena_agent.core.serialization import to_jsonable
+
+
+def build_empty_snapshot() -> dict[str, Any]:
+    return {
+        "schema_version": "arena.monitor.v1",
+        "stream": {"host": None, "port": None},
+        "runtime": {
+            "status": "idle",
+            "policy_name": None,
+            "competition_id": None,
+            "symbol": None,
+            "iteration": 0,
+            "decisions": 0,
+            "executed_actions": 0,
+            "started_at": None,
+            "updated_at": None,
+            "stopped_at": None,
+        },
+        "decision_state": None,
+        "current_state": None,
+        "last_decision": None,
+        "last_execution": None,
+        "last_transition": None,
+        "transitions": [],
+        "logs": [],
+    }
+
+
+class RuntimeMonitor:
+    """Publishes runtime snapshots to local clients over a TCP socket."""
+
+    def __init__(self, config: dict[str, Any] | None = None, *, logger: logging.Logger | None = None) -> None:
+        self.config = dict(config or {})
+        self.enabled = bool(self.config.get("enabled", False))
+        self.host = str(self.config.get("host", "127.0.0.1"))
+        self.port = int(self.config.get("port", 8765))
+        self.max_transitions = max(1, int(self.config.get("max_transitions", 20)))
+        self.max_logs = max(1, int(self.config.get("max_logs", 50)))
+        self.attach_loggers = list(self.config.get("attach_loggers", ["arena_agent.runtime", "arena_agent.tap"]))
+        self.logger = logger or logging.getLogger("arena_agent.runtime")
+        self._snapshot = build_empty_snapshot()
+        self._recent_transitions: deque[dict[str, Any]] = deque(maxlen=self.max_transitions)
+        self._recent_logs: deque[dict[str, Any]] = deque(maxlen=self.max_logs)
+        self._lock = threading.Lock()
+        self._server_socket: socket.socket | None = None
+        self._accept_thread: threading.Thread | None = None
+        self._clients: set[socket.socket] = set()
+        self._running = threading.Event()
+        self._latest_payload: bytes | None = None
+        self._log_handler: _MonitorLogHandler | None = None
+        self._started = False
+        self.stream_active = False
+
+    def start(self, *, runtime_config: Any, policy_name: str) -> None:
+        if not self.enabled or self._started:
+            return
+        try:
+            self._start_server()
+        except OSError as exc:
+            self.logger.warning("Observability stream unavailable: %s", exc)
+            self.stream_active = False
+
+        self._log_handler = _MonitorLogHandler(self)
+        for logger_name in self.attach_loggers:
+            logging.getLogger(logger_name).addHandler(self._log_handler)
+
+        with self._lock:
+            runtime = self._snapshot["runtime"]
+            runtime.update(
+                {
+                    "status": "starting",
+                    "policy_name": policy_name,
+                    "competition_id": runtime_config.competition_id,
+                    "symbol": runtime_config.symbol,
+                    "started_at": time.time(),
+                    "updated_at": time.time(),
+                }
+            )
+            self._snapshot["stream"] = {"host": self.host, "port": self.port, "active": self.stream_active}
+        self._started = True
+        self._publish_snapshot()
+
+    def stop(self, *, report: Any | None = None, final_state: Any | None = None, reason: str = "stopped") -> None:
+        if not self._started:
+            return
+
+        with self._lock:
+            runtime = self._snapshot["runtime"]
+            runtime["status"] = reason
+            runtime["updated_at"] = time.time()
+            runtime["stopped_at"] = time.time()
+            if report is not None:
+                runtime["report"] = to_jsonable(report)
+            if final_state is not None:
+                self._snapshot["current_state"] = _serialize_state(final_state)
+        self._publish_snapshot()
+        self._detach_log_handler()
+        self._stop_server()
+        self._started = False
+
+    def record_state(
+        self,
+        *,
+        iteration: int,
+        decisions: int,
+        executed_actions: int,
+        policy_name: str,
+        state: Any,
+    ) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            runtime = self._snapshot["runtime"]
+            runtime.update(
+                {
+                    "status": "running",
+                    "policy_name": policy_name,
+                    "iteration": iteration,
+                    "decisions": decisions,
+                    "executed_actions": executed_actions,
+                    "updated_at": time.time(),
+                }
+            )
+            state_payload = _serialize_state(state)
+            self._snapshot["decision_state"] = state_payload
+            if self._snapshot["current_state"] is None:
+                self._snapshot["current_state"] = state_payload
+        self._publish_snapshot()
+
+    def record_decision(
+        self,
+        *,
+        iteration: int,
+        action: Any,
+        policy_name: str,
+    ) -> None:
+        if not self.enabled:
+            return
+        action_payload = to_jsonable(action)
+        with self._lock:
+            runtime = self._snapshot["runtime"]
+            runtime.update({"iteration": iteration, "policy_name": policy_name, "updated_at": time.time()})
+            self._snapshot["last_decision"] = {
+                "timestamp": time.time(),
+                "policy_name": policy_name,
+                "action": action_payload,
+                "reason": action_payload.get("metadata", {}).get("reason"),
+                "confidence": action_payload.get("metadata", {}).get("confidence"),
+            }
+        self._publish_snapshot()
+
+    def record_transition(
+        self,
+        *,
+        iteration: int,
+        decisions: int,
+        executed_actions: int,
+        next_state: Any,
+        action: Any,
+        execution_result: Any,
+        transition: Any,
+    ) -> None:
+        if not self.enabled:
+            return
+        transition_payload = _serialize_transition(transition)
+        with self._lock:
+            runtime = self._snapshot["runtime"]
+            runtime.update(
+                {
+                    "status": "running",
+                    "iteration": iteration,
+                    "decisions": decisions,
+                    "executed_actions": executed_actions,
+                    "updated_at": time.time(),
+                }
+            )
+            self._snapshot["current_state"] = _serialize_state(next_state)
+            self._snapshot["last_execution"] = to_jsonable(execution_result)
+            self._snapshot["last_transition"] = transition_payload
+            self._recent_transitions.append(transition_payload)
+            self._snapshot["transitions"] = list(self._recent_transitions)
+
+            action_payload = to_jsonable(action)
+            reason = action_payload.get("metadata", {}).get("reason")
+            if reason and str(reason).startswith("tap_error:"):
+                self._append_log_locked("WARNING", "arena_agent.tap", str(reason))
+            if not bool(getattr(execution_result, "accepted", False)):
+                message = getattr(execution_result, "message", "execution rejected")
+                self._append_log_locked("WARNING", "arena_agent.runtime", str(message))
+        self._publish_snapshot()
+
+    def record_error(self, *, iteration: int, decisions: int, executed_actions: int, error: Exception) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            runtime = self._snapshot["runtime"]
+            runtime.update(
+                {
+                    "status": "degraded",
+                    "iteration": iteration,
+                    "decisions": decisions,
+                    "executed_actions": executed_actions,
+                    "updated_at": time.time(),
+                }
+            )
+            self._append_log_locked("ERROR", "arena_agent.runtime", str(error))
+        self._publish_snapshot()
+
+    def record_log(self, level: str, logger_name: str, message: str, *, timestamp: float | None = None) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self._append_log_locked(level, logger_name, message, timestamp=timestamp)
+        self._publish_snapshot()
+
+    def endpoint(self) -> tuple[str, int]:
+        return self.host, self.port
+
+    def current_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return json.loads(json.dumps(self._snapshot))
+
+    def _append_log_locked(
+        self,
+        level: str,
+        logger_name: str,
+        message: str,
+        *,
+        timestamp: float | None = None,
+    ) -> None:
+        self._recent_logs.append(
+            {
+                "timestamp": time.time() if timestamp is None else timestamp,
+                "level": level,
+                "logger": logger_name,
+                "message": message,
+            }
+        )
+        self._snapshot["logs"] = list(self._recent_logs)
+
+    def _start_server(self) -> None:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((self.host, self.port))
+        server.listen()
+        server.settimeout(0.5)
+        self._server_socket = server
+        self.host, self.port = server.getsockname()[0], server.getsockname()[1]
+        self.stream_active = True
+        self._running.set()
+        self._accept_thread = threading.Thread(target=self._accept_loop, name="arena-monitor-stream", daemon=True)
+        self._accept_thread.start()
+
+    def _stop_server(self) -> None:
+        self._running.clear()
+        if self._server_socket is not None:
+            try:
+                self._server_socket.close()
+            except OSError:
+                pass
+            self._server_socket = None
+        self.stream_active = False
+        if self._accept_thread is not None:
+            self._accept_thread.join(timeout=1.0)
+            self._accept_thread = None
+        for client in list(self._clients):
+            self._close_client(client)
+        self._clients.clear()
+
+    def _detach_log_handler(self) -> None:
+        if self._log_handler is None:
+            return
+        for logger_name in self.attach_loggers:
+            logging.getLogger(logger_name).removeHandler(self._log_handler)
+        self._log_handler = None
+
+    def _accept_loop(self) -> None:
+        assert self._server_socket is not None
+        while self._running.is_set():
+            try:
+                client, _ = self._server_socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            client.setblocking(True)
+            with self._lock:
+                latest = self._latest_payload
+                self._clients.add(client)
+            if latest is not None:
+                try:
+                    client.sendall(latest)
+                except OSError:
+                    self._close_client(client)
+
+    def _publish_snapshot(self) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self._snapshot["stream"] = {
+                "host": self.host,
+                "port": self.port,
+                "active": self.stream_active,
+            }
+            payload = json.dumps(self._snapshot, sort_keys=True).encode("utf-8") + b"\n"
+            self._latest_payload = payload
+            clients = list(self._clients)
+        if not self.stream_active:
+            return
+        stale_clients: list[socket.socket] = []
+        for client in clients:
+            try:
+                client.sendall(payload)
+            except OSError:
+                stale_clients.append(client)
+        for client in stale_clients:
+            self._close_client(client)
+
+    def _close_client(self, client: socket.socket) -> None:
+        with self._lock:
+            self._clients.discard(client)
+        try:
+            client.close()
+        except OSError:
+            pass
+
+
+class _MonitorLogHandler(logging.Handler):
+    def __init__(self, monitor: RuntimeMonitor) -> None:
+        super().__init__(level=logging.INFO)
+        self.monitor = monitor
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage()
+        except Exception:
+            message = record.msg if isinstance(record.msg, str) else repr(record.msg)
+        self.monitor.record_log(
+            record.levelname,
+            record.name,
+            message,
+            timestamp=record.created,
+        )
+
+
+def _serialize_state(state: Any) -> dict[str, Any]:
+    market = state.market
+    recent_candles = list(market.recent_candles[-20:])
+    return {
+        "timestamp": state.timestamp,
+        "market": {
+            "symbol": market.symbol,
+            "interval": market.interval,
+            "last_price": market.last_price,
+            "mark_price": market.mark_price,
+            "volatility": market.volatility,
+            "orderbook_imbalance": market.orderbook_imbalance,
+            "funding_rate": market.funding_rate,
+            "recent_candles": to_jsonable(recent_candles),
+            "candle_count": len(market.recent_candles),
+        },
+        "account": to_jsonable(state.account),
+        "position": to_jsonable(state.position),
+        "competition": to_jsonable(state.competition),
+        "signal_state": to_jsonable(state.signal_state),
+    }
+
+
+def _serialize_transition(transition: Any) -> dict[str, Any]:
+    return {
+        "timestamp": transition.timestamp,
+        "action": to_jsonable(transition.action),
+        "execution_result": to_jsonable(transition.execution_result),
+        "metrics": to_jsonable(transition.metrics),
+        "equity_after": transition.state_after.account.equity,
+        "balance_after": transition.state_after.account.balance,
+        "price_after": transition.state_after.market.last_price,
+        "position_after": to_jsonable(transition.state_after.position),
+    }

@@ -9,6 +9,7 @@ from arena_agent.agents.rule_agent import build_policy
 from arena_agent.core.environment_adapter import EnvironmentAdapter
 from arena_agent.core.models import RuntimeConfig, RuntimeReport, TransitionEvent, TransitionMetrics
 from arena_agent.core.serialization import to_jsonable
+from arena_agent.observability import RuntimeMonitor
 from arena_agent.core.state_builder import StateBuilder
 from arena_agent.execution.order_executor import OrderExecutor
 from arena_agent.memory.transition_store import TransitionStore
@@ -63,8 +64,10 @@ class MarketRuntime:
         journal: TradeJournal | None = None,
         policy=None,
         logger: logging.Logger | None = None,
+        monitor: RuntimeMonitor | None = None,
     ) -> None:
         self.config = config
+        self.logger = logger or logging.getLogger("arena_agent.runtime")
         self.adapter = adapter or EnvironmentAdapter(
             retry_attempts=config.adapter_retry_attempts,
             retry_backoff_seconds=config.adapter_retry_backoff_seconds,
@@ -88,10 +91,11 @@ class MarketRuntime:
             )
         self.journal = journal or TradeJournal(config.storage.journal_path)
         self.policy = policy or build_policy(config.policy)
-        self.logger = logger or logging.getLogger("arena_agent.runtime")
+        self.monitor = monitor or RuntimeMonitor(config.observability, logger=self.logger)
 
     def run(self) -> RuntimeReport:
         self.policy.reset()
+        self.monitor.start(runtime_config=self.config, policy_name=getattr(self.policy, "name", "unknown"))
         start_timestamp = time.time()
         iterations = 0
         decisions = 0
@@ -99,25 +103,40 @@ class MarketRuntime:
         total_realized_pnl = 0.0
         total_fees = 0.0
         last_state = None
+        stop_reason = "stopped"
 
         while True:
             if self.config.max_iterations is not None and iterations >= self.config.max_iterations:
+                stop_reason = "max_iterations_reached"
                 break
 
             iterations += 1
             try:
                 state = self.state_builder.build()
                 last_state = state
+                self.monitor.record_state(
+                    iteration=iterations,
+                    decisions=decisions,
+                    executed_actions=executed_actions,
+                    policy_name=getattr(self.policy, "name", "unknown"),
+                    state=state,
+                )
                 if self.config.stop_when_competition_inactive and not state.competition.is_live:
                     self.logger.info("Competition %s is not live; stopping runtime.", self.config.competition_id)
                     self.journal.record(
                         "runtime_stopped",
                         {"reason": "competition_inactive", "timestamp": time.time()},
                     )
+                    stop_reason = "competition_inactive"
                     break
 
                 action = self.policy.decide(state)
                 decisions += 1
+                self.monitor.record_decision(
+                    iteration=iterations,
+                    action=action,
+                    policy_name=getattr(self.policy, "name", "unknown"),
+                )
                 execution_result = self.executor.execute(action, state)
                 if execution_result.executed:
                     executed_actions += 1
@@ -130,6 +149,15 @@ class MarketRuntime:
 
                 self.transition_store.append(transition)
                 self.policy.update(self.transition_store.recent())
+                self.monitor.record_transition(
+                    iteration=iterations,
+                    decisions=decisions,
+                    executed_actions=executed_actions,
+                    next_state=next_state,
+                    action=action,
+                    execution_result=execution_result,
+                    transition=transition,
+                )
                 self.journal.record(
                     "transition",
                     {
@@ -155,10 +183,17 @@ class MarketRuntime:
 
                 if next_state.competition.time_remaining_seconds is not None and next_state.competition.time_remaining_seconds <= 0:
                     self.logger.info("Competition time exhausted; stopping runtime.")
+                    stop_reason = "competition_exhausted"
                     break
 
             except Exception as exc:
                 self.logger.exception("Runtime iteration %s failed: %s", iterations, exc)
+                self.monitor.record_error(
+                    iteration=iterations,
+                    decisions=decisions,
+                    executed_actions=executed_actions,
+                    error=exc,
+                )
                 self.journal.record(
                     "error",
                     {"iteration": iterations, "timestamp": time.time(), "error": str(exc)},
@@ -173,7 +208,7 @@ class MarketRuntime:
         end_timestamp = time.time()
         final_equity = None if last_state is None else last_state.account.equity
         final_balance = None if last_state is None else last_state.account.balance
-        return RuntimeReport(
+        report = RuntimeReport(
             iterations=iterations,
             final_equity=final_equity,
             final_balance=final_balance,
@@ -185,6 +220,9 @@ class MarketRuntime:
             start_timestamp=start_timestamp,
             end_timestamp=end_timestamp,
         )
+        self.monitor.stop(report=report, final_state=last_state, reason=stop_reason)
+        return report
+
 
     def _build_transition(self, state, action, execution_result, next_state) -> TransitionEvent:
         return build_transition_event(state, action, execution_result, next_state)

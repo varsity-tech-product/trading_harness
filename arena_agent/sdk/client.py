@@ -11,12 +11,16 @@ from pathlib import Path
 from typing import Any
 
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+
+
 @dataclass
 class ArenaMCPClient:
-    command: str = "./run_mcp_server.sh"
+    command: str = str(ROOT_DIR / "run_mcp_server.sh")
     args: list[str] = field(default_factory=lambda: ["--transport", "stdio"])
-    cwd: str | None = None
+    cwd: str | None = str(ROOT_DIR)
     env: dict[str, str] | None = None
+    request_timeout_seconds: float = 30.0
     _portal_cm: Any | None = field(init=False, default=None, repr=False)
     _portal: Any | None = field(init=False, default=None, repr=False)
     _runner_future: Any | None = field(init=False, default=None, repr=False)
@@ -28,7 +32,16 @@ class ArenaMCPClient:
         self._ensure_session()
         response_queue: queue.Queue = queue.Queue(maxsize=1)
         self._requests.put((name, arguments, response_queue))
-        status, payload = response_queue.get()
+        try:
+            status, payload = response_queue.get(timeout=self.request_timeout_seconds)
+        except queue.Empty as exc:
+            try:
+                self.close()
+            except Exception:
+                pass
+            raise TimeoutError(
+                f"MCP tool {name} timed out after {self.request_timeout_seconds:.1f}s"
+            ) from exc
         if status == "error":
             raise payload
         result = payload
@@ -96,7 +109,7 @@ class ArenaMCPClient:
         server = StdioServerParameters(
             command=self.command,
             args=self.args,
-            cwd=self.cwd or str(Path.cwd()),
+            cwd=self.cwd or str(ROOT_DIR),
             env=(os.environ.copy() | (self.env or {})),
         )
         async with stdio_client(server) as (read_stream, write_stream):

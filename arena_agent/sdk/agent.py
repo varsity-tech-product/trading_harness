@@ -73,17 +73,27 @@ class ArenaAgent:
     def hold(self):
         return self.action("HOLD")
 
-    def running(self) -> bool:
-        info = self.competition_info()
-        return bool(info.is_live and (info.time_remaining_seconds is None or info.time_remaining_seconds > 0))
+    def running(self, state: Any | None = None) -> bool:
+        state = self.state() if state is None else state
+        competition = getattr(state, "competition", None)
+        if competition is None:
+            return False
+        time_remaining = getattr(competition, "time_remaining_seconds", None)
+        is_live = getattr(competition, "is_live", time_remaining is None or time_remaining > 0)
+        return bool(
+            is_live
+            and (time_remaining is None or time_remaining > 0)
+        )
 
     def run(self, policy: Callable[[Any], Any], *, max_steps: int | None = None, sleep_seconds: float = 0.0, execute: bool = False):
         steps = 0
         results = []
-        while self.running():
+        while True:
             if max_steps is not None and steps >= max_steps:
                 break
             state = self.state()
+            if not self.running(state):
+                break
             decision = policy(state)
             result = self._dispatch_policy_decision(decision, execute=execute)
             results.append(result)

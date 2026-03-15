@@ -5,16 +5,13 @@ interval: 1m
 tick_interval_seconds: 30
 kline_limit: 120
 orderbook_depth: 20
-max_iterations: 5
 stop_when_competition_inactive: true
 error_backoff_seconds: 5
-dry_run: true
+dry_run: false
 adapter_retry_attempts: 3
 adapter_retry_backoff_seconds: 0.5
 adapter_min_call_spacing_seconds: 0.0
 
-# Optional signal bundle computed centrally by the framework.
-# TA-Lib is used automatically when available; builtin indicators are used otherwise.
 signal_indicators:
   - indicator: SMA
     params:
@@ -26,12 +23,21 @@ signal_indicators:
     params: {}
 
 policy:
-  type: tap_http
-  endpoint: http://127.0.0.1:8080/decision
-  timeout_seconds: 60
-  fail_open_to_hold: true
-  headers:
-    Content-Type: application/json
+  type: ensemble
+  members:
+    - type: ma_crossover
+      params:
+        fast_period: 20
+        slow_period: 50
+    - type: rsi_mean_reversion
+      params:
+        rsi_period: 14
+        oversold: 30
+        overbought: 70
+        exit_level: 50
+    - type: channel_breakout
+      params:
+        lookback: 20
 
 risk_limits:
   max_position_size_pct: 0.1
@@ -45,13 +51,13 @@ risk_limits:
   allow_short: true
 
 storage:
-  transition_path: ./artifacts/transitions.jsonl
-  journal_path: ./artifacts/journal.jsonl
+  transition_path: ./artifacts/transitions_live.jsonl
+  journal_path: ./artifacts/journal_live.jsonl
   max_in_memory_transitions: 1000
 
 observability:
   enabled: true
   host: 127.0.0.1
-  port: 8766
+  port: 8765
   max_transitions: 20
   max_logs: 50

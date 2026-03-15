@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from arena_agent import Arena, ArenaAgent
+from arena_agent.sdk.client import ArenaMCPClient
 
 
 class FakeClient:
@@ -84,6 +86,8 @@ class SDKTest(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].action.type, "OPEN_LONG")
+        self.assertEqual([name for name, _ in client.calls].count("varsity.market_state"), 1)
+        self.assertEqual([name for name, _ in client.calls].count("varsity.competition_info"), 0)
 
     def test_signal_indicators_are_forwarded(self) -> None:
         client = FakeClient()
@@ -105,6 +109,13 @@ class SDKTest(unittest.TestCase):
 
         result = agent.close()
         self.assertEqual(result.action.type, "CLOSE_POSITION")
+
+    def test_default_mcp_client_uses_repo_paths(self) -> None:
+        client = ArenaMCPClient()
+        repo_root = Path(__file__).resolve().parents[1]
+
+        self.assertEqual(Path(client.command), repo_root / "run_mcp_server.sh")
+        self.assertEqual(client.cwd, str(repo_root))
 
 
 if __name__ == "__main__":

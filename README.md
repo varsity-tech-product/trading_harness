@@ -29,6 +29,9 @@ Current status: this repo contains a working v1 trading-agent runtime for the Va
 - SDK:
   - `arena_agent/sdk/`
   - `examples/sdk_quickstart.py`
+- Terminal monitor:
+  - `arena_agent/tui/`
+  - `python3 -m arena_agent monitor`
 - Legacy scripts:
   - `bot_framework.py`
   - `strategy_1_ma.py`
@@ -247,6 +250,39 @@ def policy(state):
 
 agent.run(policy, max_steps=1)
 ```
+
+## Terminal Observability Monitor
+
+The runtime now exposes a direct local observability stream for terminal monitoring. This is not a log parser. The runtime publishes structured snapshots over a localhost TCP stream, and the monitor renders:
+
+- current market state
+- account and position state
+- computed features
+- last decision and execution result
+- recent transitions
+- runtime and TAP warnings/errors
+
+The monitor entrypoints are:
+
+```bash
+python3 -m arena_agent monitor --port 8765
+python3 -m arena_agent.tui --port 8765
+```
+
+The current live configs expose monitor ports:
+
+- `arena_agent/config/agent_live.yaml`
+  - `127.0.0.1:8765`
+- `arena_agent/config/tap_agent_config.yaml`
+  - `127.0.0.1:8766`
+
+The Textual UI is an optional dependency. Install it locally with:
+
+```bash
+.venv/bin/pip install textual rich
+```
+
+If the runtime cannot bind the monitor port, trading still continues and the runtime keeps an internal observability snapshot, but the external TUI will not be able to attach until the port issue is fixed.
 
 ## Configuration
 
