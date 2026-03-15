@@ -319,6 +319,10 @@ The Textual UI is an optional dependency. Install it locally with:
 
 If the runtime cannot bind the monitor port, trading still continues and the runtime keeps an internal observability snapshot, but the external TUI will not be able to attach until the port issue is fixed.
 
+For a minimal `systemd --user` supervisor, a ready-to-install unit template is available at:
+
+- `ops/systemd/arena-agent.service`
+
 ## Configuration
 
 Configs live in `arena_agent/config/`.

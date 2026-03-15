@@ -1,0 +1,17 @@
+[Unit]
+Description=Arena agent runtime supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Desktop/arena
+Environment=ENV_FILE=%h/Desktop/arena/.env.runtime.local
+Environment=LOG_FILE=%h/Desktop/arena/logs/continuous_agent.log
+Environment=RESTART_DELAY_SECONDS=15
+ExecStart=%h/Desktop/arena/run_continuous_agent.sh arena_agent/config/codex_agent_config.yaml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
