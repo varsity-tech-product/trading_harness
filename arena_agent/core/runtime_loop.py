@@ -130,12 +130,15 @@ class MarketRuntime:
                     stop_reason = "competition_inactive"
                     break
 
+                decision_started_at = time.time()
                 action = self.policy.decide(state)
+                decision_latency = time.time() - decision_started_at
                 decisions += 1
                 self.monitor.record_decision(
                     iteration=iterations,
                     action=action,
                     policy_name=getattr(self.policy, "name", "unknown"),
+                    latency_seconds=decision_latency,
                 )
                 execution_result = self.executor.execute(action, state)
                 if execution_result.executed:

@@ -8,6 +8,7 @@ import json
 import logging
 from pathlib import Path
 import subprocess
+from string import Template
 import tempfile
 from typing import Any, Sequence
 
@@ -19,6 +20,7 @@ from arena_agent.tap.protocol import parse_decision_response
 
 
 DEFAULT_SCHEMA_PATH = Path(__file__).with_name("codex_action_schema.json")
+DEFAULT_PROMPT_TEMPLATE_PATH = Path(__file__).with_name("codex_prompt_template.md")
 
 
 @dataclass
@@ -31,6 +33,7 @@ class CodexExecPolicy(Policy):
     sandbox_mode: str = "read-only"
     cwd: str | None = None
     extra_instructions: str = ""
+    prompt_template_path: str | None = None
     transition_path: str | None = None
     bootstrap_from_transition_log: bool = True
     risk_limits: RiskLimits | None = None
@@ -38,11 +41,16 @@ class CodexExecPolicy(Policy):
     subprocess_runner: Any | None = None
     _recent_transition_summaries: list[dict[str, Any]] = field(init=False, default_factory=list, repr=False)
     _logger: logging.Logger = field(init=False, repr=False)
+    _prompt_template: Template = field(init=False, repr=False)
+    _action_schema_text: str = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._logger = logging.getLogger("arena_agent.codex")
         if self.subprocess_runner is None:
             self.subprocess_runner = subprocess.run
+        template_path = Path(self.prompt_template_path) if self.prompt_template_path else DEFAULT_PROMPT_TEMPLATE_PATH
+        self._prompt_template = Template(template_path.read_text(encoding="utf-8"))
+        self._action_schema_text = DEFAULT_SCHEMA_PATH.read_text(encoding="utf-8").strip()
 
     def reset(self) -> None:
         self._recent_transition_summaries = []
@@ -106,25 +114,15 @@ class CodexExecPolicy(Policy):
             "risk_limits": to_jsonable(self.risk_limits) if self.risk_limits is not None else None,
             "agent_summary": _build_agent_summary(state, self._recent_transition_summaries),
         }
-
-        instruction_lines = [
-            "You are a stateless trading decision engine.",
-            "Treat the supplied JSON context as the complete memory for this tick.",
-            "Do not use shell commands, tools, repository files, or external information.",
-            "Return exactly one action that matches the provided JSON schema.",
-            "Always include type, size, take_profit, stop_loss, confidence, and reason. Use null when a numeric field is not applicable.",
-            "Prefer HOLD when the signal is weak, the context is ambiguous, or warmup is incomplete.",
-            "OPEN_LONG and OPEN_SHORT are only valid when there is no active position.",
-            "CLOSE_POSITION and UPDATE_TPSL are only valid when there is an active position.",
-            "Keep the reason short and concrete."
-        ]
-        if self.extra_instructions:
-            instruction_lines.append(self.extra_instructions.strip())
-
-        return (
-            "\n".join(instruction_lines)
-            + "\n\nDecision context JSON:\n"
-            + json.dumps(context, ensure_ascii=False, sort_keys=True)
+        extra_instructions_block = (
+            "Additional policy instructions:\n" + self.extra_instructions.strip()
+            if self.extra_instructions.strip()
+            else "Additional policy instructions:\nNone."
+        )
+        return self._prompt_template.substitute(
+            extra_instructions_block=extra_instructions_block,
+            decision_context_json=json.dumps(context, ensure_ascii=False, sort_keys=True),
+            action_schema_json=self._action_schema_text,
         )
 
     def _run_codex(self, prompt: str) -> dict[str, Any]:

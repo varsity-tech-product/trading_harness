@@ -29,6 +29,26 @@ def build_empty_snapshot() -> dict[str, Any]:
             "updated_at": None,
             "stopped_at": None,
         },
+        "health": {
+            "status": "unknown",
+            "decision_latency_seconds": None,
+            "decision_timeout_seconds": None,
+            "last_decision_timestamp": None,
+            "last_decision_age_seconds": None,
+            "last_transition_timestamp": None,
+            "last_transition_age_seconds": None,
+            "last_error_timestamp": None,
+            "last_error_age_seconds": None,
+            "last_error_message": None,
+            "last_error_category": None,
+            "consecutive_runtime_error_count": 0,
+            "runtime_error_count": 0,
+            "agent_error_count": 0,
+            "tap_error_count": 0,
+            "codex_error_count": 0,
+            "rejected_action_count": 0,
+            "no_transition_threshold_seconds": None,
+        },
         "decision_state": None,
         "current_state": None,
         "last_decision": None,
@@ -37,6 +57,47 @@ def build_empty_snapshot() -> dict[str, Any]:
         "transitions": [],
         "logs": [],
     }
+
+
+def derive_health(snapshot: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+    now = time.time() if now is None else now
+    runtime = dict(snapshot.get("runtime") or {})
+    health = dict(snapshot.get("health") or {})
+    no_transition_threshold = _optional_float(health.get("no_transition_threshold_seconds"))
+    last_transition_timestamp = _optional_float(health.get("last_transition_timestamp"))
+    last_decision_timestamp = _optional_float(health.get("last_decision_timestamp"))
+    last_error_timestamp = _optional_float(health.get("last_error_timestamp"))
+
+    health["last_transition_age_seconds"] = (
+        None if last_transition_timestamp is None else max(0.0, now - last_transition_timestamp)
+    )
+    health["last_decision_age_seconds"] = (
+        None if last_decision_timestamp is None else max(0.0, now - last_decision_timestamp)
+    )
+    health["last_error_age_seconds"] = (
+        None if last_error_timestamp is None else max(0.0, now - last_error_timestamp)
+    )
+
+    recent_issue_window = no_transition_threshold if no_transition_threshold is not None else 60.0
+    last_error_category = str(health.get("last_error_category") or "")
+    last_error_age = health.get("last_error_age_seconds")
+
+    if runtime.get("status") == "degraded" or int(health.get("consecutive_runtime_error_count") or 0) > 0:
+        health["status"] = "error"
+    elif (
+        runtime.get("status") == "running"
+        and no_transition_threshold is not None
+        and health.get("last_transition_age_seconds") is not None
+        and runtime.get("decisions", 0) > 0
+        and float(health["last_transition_age_seconds"]) > no_transition_threshold
+    ):
+        health["status"] = "warning"
+    elif last_error_age is not None and float(last_error_age) <= recent_issue_window:
+        health["status"] = "error" if last_error_category == "runtime_error" else "warning"
+    else:
+        health["status"] = "ok"
+
+    return health
 
 
 class RuntimeMonitor:
@@ -79,6 +140,7 @@ class RuntimeMonitor:
 
         with self._lock:
             runtime = self._snapshot["runtime"]
+            health = self._snapshot["health"]
             runtime.update(
                 {
                     "status": "starting",
@@ -89,6 +151,14 @@ class RuntimeMonitor:
                     "updated_at": time.time(),
                 }
             )
+            health["no_transition_threshold_seconds"] = float(
+                self.config.get(
+                    "no_transition_threshold_seconds",
+                    max(30.0, float(getattr(runtime_config, "tick_interval_seconds", 30.0)) * 2.0),
+                )
+            )
+            timeout_seconds = getattr(runtime_config, "policy", {}).get("timeout_seconds")
+            health["decision_timeout_seconds"] = _optional_float(timeout_seconds)
             self._snapshot["stream"] = {"host": self.host, "port": self.port, "active": self.stream_active}
         self._started = True
         self._publish_snapshot()
@@ -146,12 +216,14 @@ class RuntimeMonitor:
         iteration: int,
         action: Any,
         policy_name: str,
+        latency_seconds: float | None = None,
     ) -> None:
         if not self.enabled:
             return
         action_payload = to_jsonable(action)
         with self._lock:
             runtime = self._snapshot["runtime"]
+            health = self._snapshot["health"]
             runtime.update({"iteration": iteration, "policy_name": policy_name, "updated_at": time.time()})
             self._snapshot["last_decision"] = {
                 "timestamp": time.time(),
@@ -160,6 +232,8 @@ class RuntimeMonitor:
                 "reason": action_payload.get("metadata", {}).get("reason"),
                 "confidence": action_payload.get("metadata", {}).get("confidence"),
             }
+            health["last_decision_timestamp"] = time.time()
+            health["decision_latency_seconds"] = _optional_float(latency_seconds)
         self._publish_snapshot()
 
     def record_transition(
@@ -178,6 +252,7 @@ class RuntimeMonitor:
         transition_payload = _serialize_transition(transition)
         with self._lock:
             runtime = self._snapshot["runtime"]
+            health = self._snapshot["health"]
             runtime.update(
                 {
                     "status": "running",
@@ -192,13 +267,23 @@ class RuntimeMonitor:
             self._snapshot["last_transition"] = transition_payload
             self._recent_transitions.append(transition_payload)
             self._snapshot["transitions"] = list(self._recent_transitions)
+            health["last_transition_timestamp"] = _optional_float(transition_payload.get("timestamp"))
+            health["consecutive_runtime_error_count"] = 0
 
             action_payload = to_jsonable(action)
             reason = action_payload.get("metadata", {}).get("reason")
             if reason and str(reason).startswith("tap_error:"):
+                self._register_agent_issue_locked("tap_error", str(reason))
                 self._append_log_locked("WARNING", "arena_agent.tap", str(reason))
+            elif reason and str(reason).startswith("codex_error:"):
+                self._register_agent_issue_locked("codex_error", str(reason))
+                self._append_log_locked("WARNING", "arena_agent.codex", str(reason))
             if not bool(getattr(execution_result, "accepted", False)):
                 message = getattr(execution_result, "message", "execution rejected")
+                health["rejected_action_count"] = int(health.get("rejected_action_count") or 0) + 1
+                health["last_error_category"] = "rejected_action"
+                health["last_error_message"] = str(message)
+                health["last_error_timestamp"] = time.time()
                 self._append_log_locked("WARNING", "arena_agent.runtime", str(message))
         self._publish_snapshot()
 
@@ -207,6 +292,7 @@ class RuntimeMonitor:
             return
         with self._lock:
             runtime = self._snapshot["runtime"]
+            health = self._snapshot["health"]
             runtime.update(
                 {
                     "status": "degraded",
@@ -216,6 +302,11 @@ class RuntimeMonitor:
                     "updated_at": time.time(),
                 }
             )
+            health["consecutive_runtime_error_count"] = int(health.get("consecutive_runtime_error_count") or 0) + 1
+            health["runtime_error_count"] = int(health.get("runtime_error_count") or 0) + 1
+            health["last_error_category"] = "runtime_error"
+            health["last_error_message"] = str(error)
+            health["last_error_timestamp"] = time.time()
             self._append_log_locked("ERROR", "arena_agent.runtime", str(error))
         self._publish_snapshot()
 
@@ -250,6 +341,17 @@ class RuntimeMonitor:
             }
         )
         self._snapshot["logs"] = list(self._recent_logs)
+
+    def _register_agent_issue_locked(self, category: str, message: str) -> None:
+        health = self._snapshot["health"]
+        health["agent_error_count"] = int(health.get("agent_error_count") or 0) + 1
+        if category == "tap_error":
+            health["tap_error_count"] = int(health.get("tap_error_count") or 0) + 1
+        if category == "codex_error":
+            health["codex_error_count"] = int(health.get("codex_error_count") or 0) + 1
+        health["last_error_category"] = category
+        health["last_error_message"] = message
+        health["last_error_timestamp"] = time.time()
 
     def _start_server(self) -> None:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -315,6 +417,7 @@ class RuntimeMonitor:
                 "port": self.port,
                 "active": self.stream_active,
             }
+            self._snapshot["health"] = derive_health(self._snapshot)
             payload = json.dumps(self._snapshot, sort_keys=True).encode("utf-8") + b"\n"
             self._latest_payload = payload
             clients = list(self._clients)
@@ -390,3 +493,12 @@ def _serialize_transition(transition: Any) -> dict[str, Any]:
         "price_after": transition.state_after.market.last_price,
         "position_after": to_jsonable(transition.state_after.position),
     }
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

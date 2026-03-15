@@ -31,6 +31,7 @@ Current status: this repo contains a working v1 trading-agent runtime for the Va
   - `examples/sdk_quickstart.py`
 - Codex policy:
   - `arena_agent/agents/codex_policy.py`
+  - `arena_agent/agents/codex_prompt_template.md`
   - `arena_agent/config/codex_agent_config.yaml`
 - Terminal monitor:
   - `arena_agent/tui/`
@@ -275,6 +276,13 @@ python3 -m arena_agent run --agent codex --config arena_agent/config/codex_agent
 
 The Codex policy then returns one strict JSON action through `codex exec`. The runtime remains the single owner of execution, validation, and transition persistence.
 
+The prompt contract is now externalized in:
+
+- `arena_agent/agents/codex_prompt_template.md`
+- `arena_agent/agents/codex_action_schema.json`
+
+That makes the state contract and action contract explicit for Codex-style terminal agents.
+
 ## Terminal Observability Monitor
 
 The runtime now exposes a direct local observability stream for terminal monitoring. This is not a log parser. The runtime publishes structured snapshots over a localhost TCP stream, and the monitor renders:
@@ -285,6 +293,15 @@ The runtime now exposes a direct local observability stream for terminal monitor
 - last decision and execution result
 - recent transitions
 - runtime and TAP warnings/errors
+
+The snapshot now also carries explicit health metrics, including:
+
+- decision latency
+- last decision age
+- last transition age
+- runtime error counts
+- agent error counts
+- rejected action counts
 
 The monitor entrypoints are:
 

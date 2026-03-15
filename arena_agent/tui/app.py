@@ -11,6 +11,7 @@ from arena_agent.tui.datasource import RuntimeStreamDataSource
 from arena_agent.tui.panels.account_panel import AccountPanel
 from arena_agent.tui.panels.decision_panel import DecisionPanel
 from arena_agent.tui.panels.features_panel import FeaturesPanel
+from arena_agent.tui.panels.health_panel import HealthPanel
 from arena_agent.tui.panels.logs_panel import LogsPanel
 from arena_agent.tui.panels.market_panel import MarketPanel
 from arena_agent.tui.panels.transition_panel import TransitionPanel
@@ -67,6 +68,7 @@ class ArenaMonitorApp(App):
             with Horizontal(id="top-row"):
                 yield MarketPanel(id="market-panel")
                 yield AccountPanel(id="account-panel")
+                yield HealthPanel(id="health-panel")
             yield FeaturesPanel(id="features-panel", classes="full-row")
             yield DecisionPanel(id="decision-panel", classes="full-row")
             yield TransitionPanel(id="transition-panel", classes="full-row")
@@ -89,6 +91,7 @@ class ArenaMonitorApp(App):
         self.query_one("#status-line", Static).update(self.controller.status_line())
         self.query_one(MarketPanel).refresh_view(self.controller)
         self.query_one(AccountPanel).refresh_view(self.controller)
+        self.query_one(HealthPanel).refresh_view(self.controller)
         self.query_one(FeaturesPanel).refresh_view(self.controller)
         self.query_one(DecisionPanel).refresh_view(self.controller)
         self.query_one(TransitionPanel).refresh_view(self.controller)

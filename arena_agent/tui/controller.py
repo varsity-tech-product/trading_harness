@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
-from arena_agent.observability.runtime_monitor import build_empty_snapshot
+from arena_agent.observability.runtime_monitor import build_empty_snapshot, derive_health
 from arena_agent.tui.datasource import RuntimeStreamDataSource
 
 
@@ -34,6 +35,7 @@ class ArenaMonitorController:
     def status_line(self) -> str:
         runtime = self._snapshot.get("runtime", {})
         connection = self._snapshot.get("connection", {})
+        health = self.health_state()
         connection_status = connection.get("status", "unknown")
         runtime_status = runtime.get("status", "idle")
         policy_name = runtime.get("policy_name") or "unknown"
@@ -43,6 +45,7 @@ class ArenaMonitorController:
         error = connection.get("error")
         parts = [
             f"connection={connection_status}",
+            f"health={health.get('status', 'unknown')}",
             f"runtime={runtime_status}",
             f"policy={policy_name}",
             f"iteration={iteration}",
@@ -52,6 +55,9 @@ class ArenaMonitorController:
         if error:
             parts.append(f"error={error}")
         return " | ".join(parts)
+
+    def health_state(self) -> dict[str, Any]:
+        return derive_health(self._snapshot, now=time.time())
 
     def market_state(self) -> dict[str, Any]:
         state = self._decision_state()

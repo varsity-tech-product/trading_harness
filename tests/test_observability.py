@@ -14,7 +14,7 @@ from arena_agent.core.models import (
 )
 from arena_agent.core.runtime_loop import build_transition_event
 from arena_agent.interfaces.action_schema import Action, ActionType
-from arena_agent.observability.runtime_monitor import RuntimeMonitor
+from arena_agent.observability.runtime_monitor import RuntimeMonitor, derive_health
 from arena_agent.tui.controller import ArenaMonitorController
 
 
@@ -48,8 +48,15 @@ class ObservabilityTest(unittest.TestCase):
             policy_name="stub",
             state=state_before,
         )
+        monitor.record_decision(
+            iteration=1,
+            action=action,
+            policy_name="stub",
+            latency_seconds=0.42,
+        )
         update = monitor.current_snapshot()
         self.assertAlmostEqual(update["decision_state"]["market"]["last_price"], 100.0)
+        self.assertAlmostEqual(update["health"]["decision_latency_seconds"], 0.42)
         monitor.record_transition(
             iteration=1,
             decisions=1,
@@ -61,10 +68,12 @@ class ObservabilityTest(unittest.TestCase):
         )
         transition_update = monitor.current_snapshot()
         self.assertEqual(transition_update["transitions"][0]["action"]["type"], "OPEN_LONG")
+        self.assertEqual(transition_update["health"]["status"], "ok")
 
         monitor.stop(report=None, final_state=state_after, reason="stopped")
 
     def test_controller_formats_snapshot_for_panels(self) -> None:
+        now = time.time()
         datasource = Mock()
         snapshot = {
             "runtime": {
@@ -73,6 +82,21 @@ class ObservabilityTest(unittest.TestCase):
                 "iteration": 2,
                 "decisions": 1,
                 "executed_actions": 1,
+            },
+            "health": {
+                "decision_latency_seconds": 0.8,
+                "last_decision_timestamp": now - 4,
+                "last_transition_timestamp": now - 200,
+                "no_transition_threshold_seconds": 60.0,
+                "last_error_timestamp": now - 30,
+                "last_error_message": "tap_error:timeout",
+                "last_error_category": "tap_error",
+                "consecutive_runtime_error_count": 0,
+                "runtime_error_count": 0,
+                "agent_error_count": 1,
+                "tap_error_count": 1,
+                "codex_error_count": 0,
+                "rejected_action_count": 0,
             },
             "connection": {"status": "connected", "host": "127.0.0.1", "port": 8765, "error": None},
             "decision_state": {
@@ -109,6 +133,24 @@ class ObservabilityTest(unittest.TestCase):
         self.assertEqual(controller.decision_state()["action_type"], "OPEN_LONG")
         self.assertEqual(controller.transition_rows()[0]["action"]["type"], "OPEN_LONG")
         self.assertIn("connection=connected", controller.status_line())
+        self.assertEqual(controller.health_state()["status"], "warning")
+        self.assertGreater(controller.health_state()["last_transition_age_seconds"], 60.0)
+
+    def test_derive_health_marks_runtime_error_as_error(self) -> None:
+        snapshot = {
+            "runtime": {"status": "degraded", "decisions": 1},
+            "health": {
+                "consecutive_runtime_error_count": 1,
+                "runtime_error_count": 2,
+                "last_error_category": "runtime_error",
+                "last_error_timestamp": time.time() - 2,
+                "no_transition_threshold_seconds": 60.0,
+            },
+        }
+
+        health = derive_health(snapshot)
+
+        self.assertEqual(health["status"], "error")
 
 
 def _make_state(price: float):
