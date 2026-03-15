@@ -1,5 +1,6 @@
 .env.runtime.local
 .venv/
+.claude/scheduled_tasks.lock
 __pycache__/
 *.pyc
 artifacts/
