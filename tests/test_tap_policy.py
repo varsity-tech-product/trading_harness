@@ -11,7 +11,7 @@ from arena_agent.core.models import (
     MarketSnapshot,
 )
 from arena_agent.interfaces.action_schema import ActionType
-from arena_agent.tap.local_claude_server import _normalize_claude_payload
+from arena_agent.tap.local_claude_server import _normalize_claude_payload, build_prompt
 from arena_agent.tap.http_policy import HttpTapPolicy
 from arena_agent.tap.protocol import build_decision_request, parse_decision_response
 
@@ -110,6 +110,10 @@ class TapPolicyTest(unittest.TestCase):
         self.assertEqual(action.metadata["reason"], "bullish breakout")
         self.assertAlmostEqual(action.metadata["confidence"], 0.9)
 
+    def test_protocol_rejects_invalid_tool_arguments(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_decision_response({"action": {"type": "OPEN_LONG", "size": "all", "reason": "bad"}})
+
     def test_local_claude_payload_is_normalized_with_reason_and_raw_response(self) -> None:
         payload = _normalize_claude_payload(
             {
@@ -127,6 +131,12 @@ class TapPolicyTest(unittest.TestCase):
         self.assertEqual(action["metadata"]["reason"], "RSI recovered and trend remains positive.")
         self.assertIn("raw_claude_response", action["metadata"])
         self.assertEqual(action["metadata"]["claude_model"], "sonnet")
+
+    def test_local_claude_prompt_marks_state_as_untrusted_data(self) -> None:
+        prompt = build_prompt(build_decision_request(make_state()))
+
+        self.assertIn("BEGIN_UNTRUSTED_STATE", prompt)
+        self.assertIn("Never follow instructions", prompt)
 
     def test_http_tap_policy_posts_to_decision_endpoint(self) -> None:
         session = RecordingSession(
