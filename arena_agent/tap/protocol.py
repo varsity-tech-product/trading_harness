@@ -44,6 +44,10 @@ def parse_decision_response(payload: dict[str, Any]) -> Action:
     if "confidence" in payload and "confidence" not in metadata:
         metadata["confidence"] = _parse_optional_float_value(payload["confidence"], field_name="confidence")
 
+    # Strategy overrides from agent (passed through to StrategyLayer)
+    if "strategy" in action_payload and "strategy" not in metadata:
+        metadata["strategy"] = action_payload["strategy"]
+
     action = Action(
         type=action_type,
         size=size,

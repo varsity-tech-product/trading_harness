@@ -164,6 +164,7 @@ class AgentExecPolicy(Policy):
             },
             "recent_transitions": list(self._recent_transition_summaries),
             "risk_limits": to_jsonable(self.risk_limits) if self.risk_limits is not None else None,
+            "strategy_catalog": _build_strategy_catalog(),
             "agent_summary": _build_agent_summary(state, self._recent_transition_summaries),
         }
         if self.strategy_context.strip():
@@ -323,6 +324,15 @@ def _build_market_context(state: AgentState) -> dict[str, Any]:
             for candle in recent_candles
         ],
     }
+
+
+def _build_strategy_catalog() -> dict[str, Any]:
+    """Return the available strategy components so the agent can override per-action."""
+    try:
+        from arena_agent.strategy.builder import available_components
+        return available_components()
+    except Exception:
+        return {}
 
 
 def _build_agent_summary(state: AgentState, recent_transitions: Sequence[dict[str, Any]]) -> dict[str, Any]:

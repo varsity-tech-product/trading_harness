@@ -73,6 +73,31 @@ def _build_component(registry: dict[str, type], config: dict[str, Any] | None) -
     return cls(**params)
 
 
+def build_sizer(config: dict[str, Any] | None) -> PositionSizer | None:
+    """Build a single sizer from config. Public for runtime override use."""
+    return _build_component(_SIZERS, config)
+
+
+def build_tpsl(config: dict[str, Any] | None) -> TPSLPlacer | None:
+    """Build a single TP/SL placer from config. Public for runtime override use."""
+    return _build_component(_TPSL, config)
+
+
+def build_exit_rule(config: dict[str, Any] | None) -> ExitRule | None:
+    """Build a single exit rule from config. Public for runtime override use."""
+    return _build_component(_EXITS, config)
+
+
+def available_components() -> dict[str, list[str]]:
+    """Return a catalog of all available strategy component types."""
+    return {
+        "sizing": sorted(_SIZERS.keys()),
+        "tpsl": sorted(_TPSL.keys()),
+        "entry_filters": sorted(_FILTERS.keys()),
+        "exit_rules": sorted(_EXITS.keys()),
+    }
+
+
 def build_strategy_layer(
     config: dict[str, Any] | None,
     risk_limits: RiskLimits | None = None,

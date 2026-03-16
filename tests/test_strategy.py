@@ -354,6 +354,100 @@ class StrategyLayerIntegrationTest(unittest.TestCase):
         self.assertEqual(refined.type, ActionType.HOLD)
 
 
+class AgentOverrideTest(unittest.TestCase):
+    def test_agent_overrides_sizer(self) -> None:
+        layer = StrategyLayer(
+            sizer=FixedFractionSizer(fraction=0.05),  # YAML default
+            tpsl_placer=FixedTPSL(tp_pct=0.01, sl_pct=0.005),
+        )
+        state = _state(price=100.0, equity=1000.0, atr=2.0)
+        # Agent overrides sizing to risk_per_trade
+        action = Action(
+            type=ActionType.OPEN_LONG,
+            stop_loss=98.0,
+            metadata={
+                "strategy": {
+                    "sizing": {"type": "risk_per_trade", "max_risk_pct": 0.01},
+                }
+            },
+        )
+        refined = layer.refine(action, state)
+        # risk_per_trade: 1000*0.01 / |100-98| = 10/2 = 5.0
+        self.assertAlmostEqual(refined.size, 5.0)
+        self.assertEqual(refined.metadata["strategy_sizing"], "risk_per_trade")
+
+    def test_agent_overrides_tpsl(self) -> None:
+        layer = StrategyLayer(
+            tpsl_placer=FixedTPSL(tp_pct=0.01, sl_pct=0.005),  # YAML default
+        )
+        state = _state(price=100.0, atr=2.0)
+        action = Action(
+            type=ActionType.OPEN_LONG,
+            metadata={
+                "strategy": {
+                    "tpsl": {"type": "atr_multiple", "atr_tp_mult": 3.0, "atr_sl_mult": 1.0},
+                }
+            },
+        )
+        refined = layer.refine(action, state)
+        # ATR-based: TP = 100 + 2*3 = 106, SL = 100 - 2*1 = 98
+        self.assertAlmostEqual(refined.take_profit, 106.0)
+        self.assertAlmostEqual(refined.stop_loss, 98.0)
+        self.assertEqual(refined.metadata["strategy_tpsl"], "atr_multiple")
+
+    def test_agent_bypasses_strategy(self) -> None:
+        layer = StrategyLayer(
+            sizer=FixedFractionSizer(fraction=0.05),
+            tpsl_placer=FixedTPSL(tp_pct=0.01, sl_pct=0.005),
+        )
+        state = _state(price=100.0, equity=1000.0)
+        action = Action(
+            type=ActionType.OPEN_LONG,
+            size=0.002,
+            take_profit=105.0,
+            stop_loss=95.0,
+            metadata={"strategy": "none"},
+        )
+        refined = layer.refine(action, state)
+        # Strategy bypassed — original values preserved
+        self.assertEqual(refined.size, 0.002)
+        self.assertAlmostEqual(refined.take_profit, 105.0)
+        self.assertAlmostEqual(refined.stop_loss, 95.0)
+        self.assertEqual(refined.metadata["strategy_override"], "none")
+
+    def test_agent_overrides_exit_rules(self) -> None:
+        layer = StrategyLayer(
+            exit_rules=[DrawdownExit(max_drawdown_pct=0.01)],  # YAML default
+        )
+        pos = PositionSnapshot(
+            direction="long", size=0.01, entry_price=95.0,
+            unrealized_pnl=5.0, stop_loss=93.0,
+            metadata={"openTime": int(time.time() * 1000)},
+        )
+        state = _state(price=100.0, atr=2.0, equity=1000.0, position=pos)
+        # Agent overrides exit rules to trailing stop instead of drawdown
+        action = Action.hold(
+            reason="hold",
+            strategy={
+                "exit_rules": [{"type": "trailing_stop", "atr_multiplier": 2.0}],
+            },
+        )
+        refined = layer.refine(action, state)
+        # Trailing stop fires: 100 - 2*2 = 96 > current SL 93
+        self.assertEqual(refined.type, ActionType.UPDATE_TPSL)
+        self.assertAlmostEqual(refined.stop_loss, 96.0)
+
+    def test_no_override_uses_defaults(self) -> None:
+        layer = StrategyLayer(
+            sizer=FixedFractionSizer(fraction=0.05),
+        )
+        state = _state(price=100.0, equity=1000.0)
+        action = Action(type=ActionType.OPEN_LONG)  # no strategy in metadata
+        refined = layer.refine(action, state)
+        self.assertAlmostEqual(refined.size, 0.5)  # YAML default applied
+        self.assertEqual(refined.metadata["strategy_sizing"], "fixed_fraction")
+
+
 class BuilderTest(unittest.TestCase):
     def test_build_full_strategy(self) -> None:
         config = {

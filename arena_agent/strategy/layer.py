@@ -104,12 +104,41 @@ class StrategyLayer:
         Pipeline:
           1. If position is open and agent says HOLD → check exit rules
           2. If opening a position → apply entry filters, sizing, TP/SL
+
+        The agent can include a ``"strategy"`` key in ``action.metadata`` to
+        override the YAML defaults for this specific action::
+
+            {
+                "strategy": {
+                    "sizing": {"type": "risk_per_trade", "max_risk_pct": 0.015},
+                    "tpsl": {"type": "r_multiple", "reward_risk_ratio": 3.0},
+                    "exit_rules": [{"type": "trailing_stop", "atr_multiplier": 3.0}]
+                }
+            }
+
+        If a field is absent the YAML default is used.  If ``"strategy": "none"``
+        the strategy layer is bypassed entirely for this action.
         """
         meta = dict(action.metadata)
+        agent_overrides = meta.pop("strategy", None)
+
+        # Agent can disable strategy for this action
+        if agent_overrides == "none":
+            meta["strategy_override"] = "none"
+            return Action(
+                type=action.type,
+                size=action.size,
+                take_profit=action.take_profit,
+                stop_loss=action.stop_loss,
+                metadata=meta,
+            )
+
+        # Resolve per-action components (agent overrides > YAML defaults)
+        sizer, tpsl_placer, exit_rules = self._resolve_components(agent_overrides)
 
         # --- Exit rules (fire when agent HOLDs with an open position) ---
         if state.position is not None and action.is_hold:
-            for rule in self.exit_rules:
+            for rule in exit_rules:
                 exit_action = rule.check(state)
                 if exit_action is not None:
                     exit_meta = dict(exit_action.metadata)
@@ -134,10 +163,10 @@ class StrategyLayer:
 
         # --- Position sizing ---
         size = action.size
-        if self.sizer is not None:
-            computed_size = self.sizer.compute(action, state)
+        if sizer is not None:
+            computed_size = sizer.compute(action, state)
             if computed_size is not None:
-                meta["strategy_sizing"] = self.sizer.name
+                meta["strategy_sizing"] = sizer.name
                 meta["strategy_original_size"] = size
                 size = computed_size
 
@@ -150,13 +179,13 @@ class StrategyLayer:
         # --- TP/SL placement ---
         tp = action.take_profit
         sl = action.stop_loss
-        if self.tpsl_placer is not None:
-            computed_tp, computed_sl = self.tpsl_placer.compute(action, state)
+        if tpsl_placer is not None:
+            computed_tp, computed_sl = tpsl_placer.compute(action, state)
             if computed_tp is not None:
                 tp = computed_tp
             if computed_sl is not None:
                 sl = computed_sl
-            meta["strategy_tpsl"] = self.tpsl_placer.name
+            meta["strategy_tpsl"] = tpsl_placer.name
 
         return Action(
             type=action.type,
@@ -165,3 +194,39 @@ class StrategyLayer:
             stop_loss=sl,
             metadata=meta,
         )
+
+    def _resolve_components(
+        self,
+        overrides: dict[str, Any] | None,
+    ) -> tuple[PositionSizer | None, TPSLPlacer | None, list[ExitRule]]:
+        """Merge agent per-action overrides with YAML defaults.
+
+        Imports the builder lazily to avoid circular dependency.
+        """
+        if not overrides or not isinstance(overrides, dict):
+            return self.sizer, self.tpsl_placer, self.exit_rules
+
+        from arena_agent.strategy.builder import build_sizer, build_tpsl, build_exit_rule
+
+        sizer = self.sizer
+        if "sizing" in overrides:
+            built = build_sizer(overrides["sizing"])
+            if built is not None:
+                sizer = built
+
+        tpsl = self.tpsl_placer
+        if "tpsl" in overrides:
+            built = build_tpsl(overrides["tpsl"])
+            if built is not None:
+                tpsl = built
+
+        exits = list(self.exit_rules)
+        if "exit_rules" in overrides:
+            override_exits = [
+                build_exit_rule(e) for e in overrides["exit_rules"]
+            ]
+            override_exits = [e for e in override_exits if e is not None]
+            if override_exits:
+                exits = override_exits  # replace, not merge
+
+        return sizer, tpsl, exits

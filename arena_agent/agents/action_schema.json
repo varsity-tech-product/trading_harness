@@ -46,6 +46,14 @@
         "reason": {
           "type": "string",
           "minLength": 1
+        },
+        "strategy": {
+          "description": "Optional per-action strategy overrides. Set to \"none\" to bypass the strategy layer. Or provide an object with sizing/tpsl/exit_rules overrides.",
+          "type": [
+            "object",
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
