@@ -2,6 +2,15 @@
   "name": "@varsity-arena/agent",
   "version": "0.1.0",
   "description": "Arena trading agent runtime with managed install, TUI monitoring, and MCP support",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/varsity-tech-product/arena.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/varsity-tech-product/arena/tree/main/packages/mcp",
+  "bugs": {
+    "url": "https://github.com/varsity-tech-product/arena/issues"
+  },
   "type": "module",
   "bin": {
     "arena-mcp": "./dist/cli.js",
@@ -26,6 +35,9 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist/",

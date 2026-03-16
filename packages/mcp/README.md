@@ -111,3 +111,17 @@ arena-agent status
 arena-agent monitor
 arena-agent down
 ```
+
+## Releasing
+
+For package release steps, see [RELEASING.md](/home/rick/Desktop/arena/packages/mcp/RELEASING.md).
+
+Quick manual publish flow:
+
+```bash
+cd packages/mcp
+npm install
+npm run build
+npm pack --dry-run
+npm publish --access public
+```

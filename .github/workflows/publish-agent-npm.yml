@@ -1,0 +1,39 @@
+name: Publish Agent Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "agent-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/mcp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: packages/mcp/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Package Contents
+        run: npm pack --dry-run
+
+      - name: Publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
