@@ -15,6 +15,7 @@ from arena_agent.core.state_builder import StateBuilder
 from arena_agent.execution.order_executor import OrderExecutor
 from arena_agent.memory.transition_store import TransitionStore
 from arena_agent.memory.trade_journal import TradeJournal
+from arena_agent.strategy.builder import build_strategy_layer
 
 
 def build_transition_event(state, action, execution_result, next_state) -> TransitionEvent:
@@ -64,6 +65,7 @@ class MarketRuntime:
         experience_store: TransitionStore | None = None,
         journal: TradeJournal | None = None,
         policy=None,
+        strategy=None,
         logger: logging.Logger | None = None,
         monitor: RuntimeMonitor | None = None,
     ) -> None:
@@ -92,6 +94,7 @@ class MarketRuntime:
             )
         self.journal = journal or TradeJournal(config.storage.journal_path)
         self.policy = policy or build_policy(config.policy, runtime_config=config)
+        self.strategy = strategy or build_strategy_layer(config.strategy, risk_limits=config.risk_limits)
         self.monitor = monitor or RuntimeMonitor(config.observability, logger=self.logger)
 
     def run(self) -> RuntimeReport:
@@ -165,6 +168,8 @@ class MarketRuntime:
                     decision_started_at = time.time()
                     action = self.policy.decide(state)
                     decision_latency = time.time() - decision_started_at
+                if self.strategy is not None:
+                    action = self.strategy.refine(action, state)
                 decisions += 1
                 self.monitor.record_decision(
                     iteration=iterations,

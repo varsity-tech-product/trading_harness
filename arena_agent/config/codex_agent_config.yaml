@@ -32,7 +32,29 @@ policy:
     You decide which indicators matter for the current market regime — trend, momentum,
     volatility, and volume signals are all available. Combine them freely.
     Be decisive. Consecutive HOLDs waste opportunity in a time-limited competition.
-    Set TP/SL using ATR or Bollinger Band width for adaptive risk management.
+    A strategy layer handles position sizing (volatility-scaled) and TP/SL placement
+    (ATR-based) automatically. Focus on direction and timing — the strategy refines
+    your size and TP/SL. A trailing stop and drawdown exit also run automatically.
+
+# Strategy layer — composable building blocks between policy decision and executor.
+# Omit or leave empty to let the agent control sizing/TP/SL directly.
+strategy:
+  sizing:
+    type: volatility_scaled
+    target_risk_pct: 0.02
+    atr_multiplier: 2.0
+  tpsl:
+    type: atr_multiple
+    atr_tp_mult: 2.0
+    atr_sl_mult: 1.5
+  entry_filters:
+    - type: trade_budget
+      min_remaining_trades: 5
+  exit_rules:
+    - type: trailing_stop
+      atr_multiplier: 2.0
+    - type: drawdown_exit
+      max_drawdown_pct: 0.02
 
 risk_limits:
   max_position_size_pct: 0.1
