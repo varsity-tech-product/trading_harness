@@ -171,6 +171,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "debug-env") {
+    runDebugEnv();
+    return;
+  }
+
   if (command === "dashboard") {
     await runDashboard();
     return;
@@ -671,6 +676,7 @@ function printUsage(invocation: string): void {
   console.log("  competitions             List active competitions");
   console.log("  register <id>            Register for a competition");
   console.log("  leaderboard <id>         View competition leaderboard");
+  console.log("  debug-env                Show environment diagnostics (API key, paths)");
   console.log("");
   console.log("Examples:");
   console.log("  arena-agent init");
@@ -842,6 +848,52 @@ function runLogs(): void {
   }
   const lines = Number(optionValue("--lines") ?? "50");
   console.log(tailLines(logPath, lines));
+}
+
+function runDebugEnv(): void {
+  const home = process.env.HOME ?? "(unset)";
+  const arenaRoot = process.env.ARENA_ROOT ?? "(unset)";
+  const arenaHome = process.env.ARENA_HOME ?? "(unset)";
+  const apiKey = process.env.VARSITY_API_KEY ?? "(unset)";
+  const cwd = process.cwd();
+  const managedHome = defaultArenaHome();
+  const managedExists = existsSync(managedHome);
+  const managedEnv = existsSync(resolve(managedHome, ".env.runtime.local"));
+
+  console.log("Arena Agent Environment Diagnostics\n");
+  console.log(`HOME:              ${home}`);
+  console.log(`CWD:               ${cwd}`);
+  console.log(`ARENA_ROOT:        ${arenaRoot}`);
+  console.log(`ARENA_HOME:        ${arenaHome}`);
+  console.log(`VARSITY_API_KEY:   ${apiKey === "(unset)" ? "(unset)" : apiKey.slice(0, 12) + "..."}`);
+  console.log("");
+  console.log(`Managed home:      ${managedHome}`);
+  console.log(`  Exists:          ${managedExists ? "yes" : "no"}`);
+  console.log(`  .env file:       ${managedEnv ? "yes" : "no"}`);
+
+  if (managedEnv) {
+    const envContent = loadEnvFile(managedHome);
+    const storedKey = envContent.VARSITY_API_KEY;
+    console.log(`  Stored API key:  ${storedKey ? storedKey.slice(0, 12) + "..." : "(empty)"}`);
+  }
+
+  console.log("");
+  try {
+    const root = findArenaRoot();
+    console.log(`Resolved root:     ${root}`);
+    const rootEnv = loadEnvFile(root);
+    const rootKey = rootEnv.VARSITY_API_KEY;
+    console.log(`  .env API key:    ${rootKey ? rootKey.slice(0, 12) + "..." : "(empty or missing)"}`);
+
+    const python = findPython(root);
+    console.log(`  Python:          ${python}`);
+  } catch (err) {
+    console.log(`Resolved root:     FAILED — ${err instanceof Error ? err.message : err}`);
+  }
+
+  console.log("");
+  console.log("If the API key shows (unset) and no stored key exists,");
+  console.log("run: arena-agent init");
 }
 
 async function runDashboard(): Promise<void> {

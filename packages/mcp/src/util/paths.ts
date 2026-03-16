@@ -3,7 +3,16 @@ import { resolve, dirname } from "node:path";
 import { defaultArenaHome, isArenaHome, localPythonSourcePath } from "./home.js";
 
 /**
- * Find the arena project root by walking up from cwd or using ARENA_ROOT env.
+ * Find the arena project root.
+ *
+ * Resolution order (first match wins):
+ *   1. ARENA_ROOT or ARENA_HOME env var
+ *   2. Walk up from cwd looking for an arena home marker or repo root
+ *   3. ~/.arena-agent (managed home created by `arena-agent init`)
+ *   4. Bundled repo root (dev installs via npm link)
+ *
+ * The managed home at ~/.arena-agent is the recommended path for agents.
+ * After `arena-agent init`, no env vars are needed — the CLI always finds it.
  */
 export function findArenaRoot(): string {
   const envRoot = process.env.ARENA_ROOT;
@@ -26,6 +35,8 @@ export function findArenaRoot(): string {
     dir = parent;
   }
 
+  // ~/.arena-agent is the standard managed home — always check it.
+  // This is the path agents rely on after `arena-agent init`.
   const managedHome = defaultArenaHome();
   if (isArenaHome(managedHome)) {
     return managedHome;
