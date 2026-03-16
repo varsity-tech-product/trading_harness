@@ -18,6 +18,7 @@ from arena_agent.core.models import (
     RuntimeConfig,
 )
 from arena_agent.features.engine import FeatureEngine, resolve_indicator_specs
+from arena_agent.features.registry import feature_key
 
 
 class StateBuilder:
@@ -26,6 +27,31 @@ class StateBuilder:
         self.config = config
         resolved_specs = resolve_indicator_specs(config.policy, config.signal_indicators)
         self.feature_engine = FeatureEngine(resolved_specs)
+
+    def add_indicators(self, raw_specs: list[dict]) -> int:
+        """Merge dynamic indicator specs into the feature engine.
+
+        Called by the runtime loop when the agent requests new indicators
+        via ``action.metadata["indicators"]``.  Deduplicates by feature key.
+        Returns the number of new indicators actually added.
+        """
+        from arena_agent.core.models import FeatureSpec as FS
+
+        existing_keys = {
+            feature_key(s.indicator, s.params, s.key)
+            for s in self.feature_engine.feature_specs
+        }
+        added = 0
+        for raw in raw_specs:
+            if not isinstance(raw, dict) or "indicator" not in raw:
+                continue
+            spec = FS.from_mapping(raw)
+            key = feature_key(spec.indicator, spec.params, spec.key)
+            if key not in existing_keys:
+                self.feature_engine.feature_specs.append(spec)
+                existing_keys.add(key)
+                added += 1
+        return added
 
     def build(self) -> AgentState:
         market_info = self.adapter.get_market_info(self.config.symbol)

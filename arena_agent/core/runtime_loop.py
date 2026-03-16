@@ -190,6 +190,13 @@ class MarketRuntime:
 
                 self.transition_store.append(transition)
                 self.policy.update(self.transition_store.recent())
+
+                # Dynamic indicator requests from agent (available next tick)
+                requested_indicators = action.metadata.get("indicators")
+                if requested_indicators and isinstance(requested_indicators, list):
+                    added = self.state_builder.add_indicators(requested_indicators)
+                    if added:
+                        self.logger.info("Agent requested %d new indicator(s) for next tick.", added)
                 self.monitor.record_transition(
                     iteration=iterations,
                     decisions=decisions,

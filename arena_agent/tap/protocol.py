@@ -48,6 +48,10 @@ def parse_decision_response(payload: dict[str, Any]) -> Action:
     if "strategy" in action_payload and "strategy" not in metadata:
         metadata["strategy"] = action_payload["strategy"]
 
+    # Dynamic indicator requests from agent (passed through to StateBuilder)
+    if "indicators" in action_payload and "indicators" not in metadata:
+        metadata["indicators"] = action_payload["indicators"]
+
     action = Action(
         type=action_type,
         size=size,

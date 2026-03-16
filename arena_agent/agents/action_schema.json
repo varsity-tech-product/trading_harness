@@ -54,6 +54,13 @@
             "string",
             "null"
           ]
+        },
+        "indicators": {
+          "description": "Optional list of indicator specs to add for the next tick. Example: [{\"indicator\": \"SMA\", \"params\": {\"period\": 200}}]",
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "required": [
