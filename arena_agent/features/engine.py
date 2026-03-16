@@ -20,6 +20,8 @@ from arena_agent.features.registry import (
 )
 
 
+# API docs state max=1500, but tested: size>1000 silently falls back to 500.
+# Using 1000 as the safe maximum until the backend fix is deployed.
 API_MAX_KLINES = 1000
 
 
