@@ -1,4 +1,4 @@
-"""Codex-backed stateless execution policy."""
+"""CLI-backed stateless execution policy (supports Claude Code and Codex CLI)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import json
 import logging
 from pathlib import Path
+import shutil
 import subprocess
 from string import Template
 import tempfile
@@ -19,14 +20,55 @@ from arena_agent.interfaces.policy_interface import Policy
 from arena_agent.tap.protocol import parse_decision_response
 
 
-DEFAULT_SCHEMA_PATH = Path(__file__).with_name("codex_action_schema.json")
-DEFAULT_PROMPT_TEMPLATE_PATH = Path(__file__).with_name("codex_prompt_template.md")
+DEFAULT_SCHEMA_PATH = Path(__file__).with_name("action_schema.json")
+DEFAULT_PROMPT_TEMPLATE_PATH = Path(__file__).with_name("prompt_template.md")
+
+VALID_BACKENDS = ("auto", "codex", "claude")
+
+_FENCE_RE_PATTERN = None
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Remove markdown code fences (```json ... ```) from LLM output."""
+    import re
+
+    global _FENCE_RE_PATTERN
+    if _FENCE_RE_PATTERN is None:
+        _FENCE_RE_PATTERN = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?\s*```$", re.DOTALL)
+    match = _FENCE_RE_PATTERN.match(text.strip())
+    return match.group(1).strip() if match else text.strip()
+
+
+def resolve_backend(backend: str, command: str | None) -> str:
+    """Determine which CLI backend to use.
+
+    Returns ``"codex"`` or ``"claude"``.
+    """
+    if backend == "codex":
+        return "codex"
+    if backend == "claude":
+        return "claude"
+    if backend != "auto":
+        raise ValueError(f"Invalid backend {backend!r}. Must be one of {VALID_BACKENDS}.")
+    # If command is explicitly set, infer from its name.
+    if command is not None:
+        return "claude" if "claude" in Path(command).name else "codex"
+    # Auto-detect from PATH – prefer claude.
+    if shutil.which("claude"):
+        return "claude"
+    if shutil.which("codex"):
+        return "codex"
+    raise RuntimeError(
+        "Neither 'claude' nor 'codex' CLI found in PATH. "
+        "Install one or set backend/command explicitly in the policy config."
+    )
 
 
 @dataclass
-class CodexExecPolicy(Policy):
+class AgentExecPolicy(Policy):
+    backend: str = "auto"
     model: str | None = None
-    command: str = "codex"
+    command: str | None = None
     timeout_seconds: float = 45.0
     recent_transition_limit: int = 5
     fail_open_to_hold: bool = True
@@ -38,15 +80,19 @@ class CodexExecPolicy(Policy):
     transition_path: str | None = None
     bootstrap_from_transition_log: bool = True
     risk_limits: RiskLimits | None = None
-    name: str = "codex_exec"
+    name: str = "agent_exec"
     subprocess_runner: Any | None = None
+    _resolved_backend: str = field(init=False, repr=False)
     _recent_transition_summaries: list[dict[str, Any]] = field(init=False, default_factory=list, repr=False)
     _logger: logging.Logger = field(init=False, repr=False)
     _prompt_template: Template = field(init=False, repr=False)
     _action_schema_text: str = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._logger = logging.getLogger("arena_agent.codex")
+        self._resolved_backend = resolve_backend(self.backend, self.command)
+        if self.command is None:
+            self.command = self._resolved_backend  # "codex" or "claude"
+        self._logger = logging.getLogger(f"arena_agent.cli.{self._resolved_backend}")
         if self.subprocess_runner is None:
             self.subprocess_runner = subprocess.run
         template_path = Path(self.prompt_template_path) if self.prompt_template_path else DEFAULT_PROMPT_TEMPLATE_PATH
@@ -67,11 +113,12 @@ class CodexExecPolicy(Policy):
     def decide(self, state: AgentState) -> Action:
         prompt = self._build_prompt(state)
         try:
-            payload = self._run_codex(prompt)
+            payload = self._run_cli(prompt)
             parsed = parse_decision_response(payload)
             metadata = dict(parsed.metadata)
-            metadata.setdefault("source", "codex_exec")
-            metadata.setdefault("codex_model", self.model or "default")
+            metadata.setdefault("source", f"{self._resolved_backend}_exec")
+            metadata.setdefault("cli_backend", self._resolved_backend)
+            metadata.setdefault("cli_model", self.model or "default")
             return Action(
                 type=parsed.type,
                 size=parsed.size,
@@ -81,9 +128,9 @@ class CodexExecPolicy(Policy):
             )
         except Exception as exc:
             if self.fail_open_to_hold:
-                self._logger.warning("Codex decision failed: %s", exc)
+                self._logger.warning("CLI decision failed (%s): %s", self._resolved_backend, exc)
                 return Action.hold(
-                    reason=f"codex_error:{type(exc).__name__}",
+                    reason=f"cli_error:{type(exc).__name__}",
                     error=str(exc),
                 )
             raise
@@ -95,6 +142,10 @@ class CodexExecPolicy(Policy):
                 "backend": state.signal_state.backend,
                 "warmup_complete": state.signal_state.warmup_complete,
                 "values": to_jsonable(state.signal_state.values),
+                "indicator_catalog": [
+                    m["indicator"]
+                    for m in state.signal_state.metadata.get("indicator_metadata", [])
+                ],
             },
             "account_state": {
                 "balance": state.account.balance,
@@ -128,6 +179,12 @@ class CodexExecPolicy(Policy):
             decision_context_json=json.dumps(_sanitize_for_prompt(context), ensure_ascii=False, sort_keys=True),
             action_schema_json=self._action_schema_text,
         )
+
+    def _run_cli(self, prompt: str) -> dict[str, Any]:
+        """Dispatch to the resolved backend."""
+        if self._resolved_backend == "claude":
+            return self._run_claude(prompt)
+        return self._run_codex(prompt)
 
     def _run_codex(self, prompt: str) -> dict[str, Any]:
         command = [
@@ -171,6 +228,60 @@ class CodexExecPolicy(Policy):
                 raise ValueError(f"codex exec returned invalid JSON: {raw_output[:500]}") from exc
         if not isinstance(payload, dict):
             raise ValueError(f"codex exec payload must be an object, got: {payload!r}")
+        return payload
+
+    def _run_claude(self, prompt: str) -> dict[str, Any]:
+        command = [
+            self.command,
+            "-p",
+            "--no-session-persistence",
+            "--output-format", "json",
+            "--json-schema",
+            self._action_schema_text,
+        ]
+        if self.model:
+            command.extend(["--model", self.model])
+
+        decision_cwd = self.cwd or tempfile.gettempdir()
+        result = self.subprocess_runner(
+            command,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            cwd=decision_cwd,
+            timeout=self.timeout_seconds,
+            check=False,
+        )
+        if result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"claude failed with code={result.returncode}: {stderr[:500]}")
+        raw_output = (result.stdout or "").strip()
+        if not raw_output:
+            raise RuntimeError("claude returned empty output")
+
+        # --output-format json wraps the response: {"result": "...", ...}
+        # The "result" field contains the model text which should be valid JSON
+        # matching our schema.  Fall back to parsing raw_output directly if the
+        # wrapper is absent (e.g. older CLI versions).
+        try:
+            wrapper = json.loads(raw_output)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"claude returned invalid JSON: {raw_output[:500]}") from exc
+
+        if isinstance(wrapper, dict) and "result" in wrapper:
+            result_text = str(wrapper["result"]).strip()
+        else:
+            result_text = raw_output
+
+        # Claude may wrap JSON in markdown fences – strip them.
+        result_text = _strip_markdown_fences(result_text)
+
+        try:
+            payload = json.loads(result_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"claude result is not valid JSON: {result_text[:500]}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"claude payload must be an object, got: {payload!r}")
         return payload
 
     def _load_recent_transition_summaries(self) -> list[dict[str, Any]]:

@@ -13,6 +13,13 @@ from arena_agent.config_loader import load_runtime_config
 from arena_agent.core.runtime_loop import MarketRuntime
 from arena_agent.runtime_env import load_local_runtime_env, require_runtime_environment
 
+# --agent values that map to the agent_exec policy and their backend.
+_AGENT_EXEC_BACKENDS = {
+    "claude": "claude",
+    "codex": "codex",
+    "auto": "auto",
+}
+
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -32,9 +39,11 @@ def _run_runtime(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(description="Run an Arena trading agent runtime.")
     parser.add_argument(
         "--agent",
-        choices=["config", "rule", "claude", "codex"],
+        choices=["config", "rule", "tap", "claude", "codex", "auto"],
         default="config",
-        help="Policy backend to run. 'config' keeps the YAML policy unchanged.",
+        help="Policy to run. 'claude' uses Claude Code, 'codex' uses Codex CLI, "
+        "'auto' detects which is available. 'tap' uses an external HTTP endpoint. "
+        "'config' keeps the YAML policy unchanged.",
     )
     parser.add_argument(
         "--config",
@@ -58,42 +67,42 @@ def _run_runtime(argv: list[str]) -> None:
         help="Python logging level.",
     )
     parser.add_argument(
-        "--codex-model",
+        "--model",
         default=None,
-        help="Optional Codex model override when --agent codex is used.",
+        help="Model override (e.g. sonnet, opus, gpt-5).",
     )
     parser.add_argument(
-        "--codex-timeout-seconds",
+        "--timeout-seconds",
         type=float,
         default=45.0,
-        help="Decision timeout for Codex exec.",
+        help="Decision timeout for the CLI agent.",
     )
     parser.add_argument(
-        "--codex-recent-transitions",
+        "--recent-transitions",
         type=int,
         default=5,
-        help="How many recent transitions to include in Codex decision memory.",
+        help="How many recent transitions to include in decision memory.",
     )
     parser.add_argument(
-        "--codex-extra-instructions",
+        "--extra-instructions",
         default="",
-        help="Optional extra prompt instructions for the Codex policy.",
+        help="Optional extra prompt instructions for the policy.",
     )
     parser.add_argument(
         "--strategy-context",
         default="",
-        help="Optional fixed strategy context for Codex decisions.",
+        help="Optional fixed strategy context for agent decisions.",
     )
     parser.add_argument(
         "--tap-endpoint",
         default="http://127.0.0.1:8080/decision",
-        help="Decision endpoint when --agent claude is used.",
+        help="Decision endpoint when --agent tap is used.",
     )
     parser.add_argument(
         "--tap-timeout-seconds",
         type=float,
         default=60.0,
-        help="Decision timeout when --agent claude is used.",
+        help="Decision timeout when --agent tap is used.",
     )
     args = parser.parse_args(argv)
 
@@ -125,7 +134,7 @@ def _apply_agent_override(config, args: Any):
     agent = str(getattr(args, "agent", "config")).lower()
     if agent in {"config", "rule"}:
         return config
-    if agent == "claude":
+    if agent == "tap":
         policy = dict(config.policy)
         policy.update(
             {
@@ -137,17 +146,19 @@ def _apply_agent_override(config, args: Any):
             }
         )
         return replace(config, policy=policy)
-    if agent == "codex":
-        timeout_seconds = min(args.codex_timeout_seconds, max(1.0, float(config.tick_interval_seconds) * 0.8))
+    if agent in _AGENT_EXEC_BACKENDS:
+        backend = _AGENT_EXEC_BACKENDS[agent]
+        timeout_seconds = min(args.timeout_seconds, max(1.0, float(config.tick_interval_seconds) * 0.8))
         policy = {
-            "type": "codex_exec",
-            "model": args.codex_model,
+            "type": "agent_exec",
+            "backend": backend,
+            "model": args.model,
             "timeout_seconds": timeout_seconds,
-            "recent_transition_limit": args.codex_recent_transitions,
+            "recent_transition_limit": args.recent_transitions,
             "fail_open_to_hold": True,
             "sandbox_mode": "read-only",
             "cwd": str(Path.cwd()),
-            "extra_instructions": args.codex_extra_instructions,
+            "extra_instructions": args.extra_instructions,
             "strategy_context": args.strategy_context,
             "bootstrap_from_transition_log": True,
         }

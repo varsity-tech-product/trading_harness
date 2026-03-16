@@ -4,7 +4,8 @@ import importlib.util
 import unittest
 
 from arena_agent.core.models import Candle, FeatureSpec
-from arena_agent.features.engine import FeatureEngine
+from arena_agent.features.engine import FeatureEngine, resolve_indicator_specs
+from arena_agent.features.registry import BUILTIN_FULL
 
 
 class FeatureEngineTest(unittest.TestCase):
@@ -78,6 +79,57 @@ class FeatureEngineTest(unittest.TestCase):
 
         self.assertEqual(signal_state.backend, "talib" if signal_state.backend == "talib" else "builtin")
         self.assertIn("mavp_test", signal_state.values)
+
+
+class ResolveIndicatorSpecsTest(unittest.TestCase):
+    def test_full_mode_returns_all_builtins(self) -> None:
+        specs = resolve_indicator_specs({"indicator_mode": "full"}, [])
+        keys = {s.indicator.upper() for s in specs}
+        self.assertIn("SMA", keys)
+        self.assertIn("RSI", keys)
+        self.assertIn("MACD", keys)
+        self.assertIn("BBANDS", keys)
+        self.assertIn("ATR", keys)
+        self.assertIn("OBV", keys)
+        self.assertGreaterEqual(len(specs), len(BUILTIN_FULL))
+
+    def test_custom_mode_uses_policy_list(self) -> None:
+        policy = {
+            "indicator_mode": "custom",
+            "signal_indicators": [
+                {"indicator": "RSI", "params": {"period": 7}},
+            ],
+        }
+        fallback = [FeatureSpec(indicator="SMA", params={"period": 50})]
+        specs = resolve_indicator_specs(policy, fallback)
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0].indicator, "RSI")
+
+    def test_default_mode_uses_fallback(self) -> None:
+        fallback = [FeatureSpec(indicator="SMA", params={"period": 20})]
+        specs = resolve_indicator_specs({}, fallback)
+        self.assertEqual(specs, fallback)
+
+    def test_default_mode_empty_fallback(self) -> None:
+        specs = resolve_indicator_specs({}, [])
+        self.assertEqual(specs, [])
+
+    def test_full_mode_computes_all_builtins(self) -> None:
+        specs = resolve_indicator_specs({"indicator_mode": "full"}, [])
+        engine = FeatureEngine(specs)
+        candles = [
+            Candle(i, i + 1, 100 + i * 0.5, 101 + i * 0.5, 99 + i * 0.5, 100 + i * 0.5, 10 + i)
+            for i in range(120)
+        ]
+        signal_state = engine.compute(candles)
+        self.assertTrue(signal_state.warmup_complete)
+        # All builtin indicators should produce non-None values with 120 candles
+        for key, value in signal_state.values.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    self.assertIsNotNone(sub_value, f"{key}.{sub_key} is None")
+            else:
+                self.assertIsNotNone(value, f"{key} is None")
 
 
 if __name__ == "__main__":

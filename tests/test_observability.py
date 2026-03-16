@@ -98,7 +98,7 @@ class ObservabilityTest(unittest.TestCase):
                 "runtime_error_count": 0,
                 "agent_error_count": 1,
                 "tap_error_count": 1,
-                "codex_error_count": 0,
+                "cli_error_count": 0,
                 "rejected_action_count": 0,
                 "position_drift_count": 1,
                 "last_position_drift_timestamp": now - 10,

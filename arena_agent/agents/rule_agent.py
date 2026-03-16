@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from arena_agent.agents.codex_policy import CodexExecPolicy
+from arena_agent.agents.agent_exec_policy import AgentExecPolicy
 from arena_agent.agents.indicators import rolling_sma, rsi
 from arena_agent.core.models import AgentState, TransitionEvent
 from arena_agent.interfaces.action_schema import Action, ActionType
@@ -158,9 +158,10 @@ def build_policy(config: dict, *, runtime_config=None) -> Policy:
             fail_open_to_hold=fail_open_to_hold,
             **params,
         )
-    if policy_type == "codex_exec":
+    if policy_type in ("agent_exec", "codex_exec"):
+        backend = str(config.get("backend", params.pop("backend", "auto")))
         model = config.get("model") or params.pop("model", None)
-        command = config.get("command") or params.pop("command", "codex")
+        command = config.get("command") or params.pop("command", None)
         timeout_seconds = float(config.get("timeout_seconds", params.pop("timeout_seconds", 45.0)))
         recent_transition_limit = int(
             config.get("recent_transition_limit", params.pop("recent_transition_limit", 5))
@@ -175,7 +176,8 @@ def build_policy(config: dict, *, runtime_config=None) -> Policy:
         )
         transition_path = None if runtime_config is None else runtime_config.storage.transition_path
         risk_limits = None if runtime_config is None else runtime_config.risk_limits
-        return CodexExecPolicy(
+        return AgentExecPolicy(
+            backend=backend,
             model=model,
             command=command,
             timeout_seconds=timeout_seconds,

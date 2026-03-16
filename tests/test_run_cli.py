@@ -8,7 +8,7 @@ from arena_agent.core.models import RuntimeConfig
 
 
 class RunCLITest(unittest.TestCase):
-    def test_apply_agent_override_sets_codex_policy(self) -> None:
+    def test_agent_claude_sets_agent_exec_with_claude_backend(self) -> None:
         config = RuntimeConfig.from_mapping(
             {
                 "competition_id": 4,
@@ -20,23 +20,70 @@ class RunCLITest(unittest.TestCase):
             "Args",
             (),
             {
-                "agent": "codex",
-                "codex_model": "gpt-5",
-                "codex_timeout_seconds": 60.0,
-                "codex_recent_transitions": 5,
-                "codex_extra_instructions": "Stay conservative.",
+                "agent": "claude",
+                "model": "sonnet",
+                "timeout_seconds": 60.0,
+                "recent_transitions": 5,
+                "extra_instructions": "Stay conservative.",
                 "strategy_context": "momentum",
             },
         )()
 
         updated = _apply_agent_override(config, args)
 
-        self.assertEqual(updated.policy["type"], "codex_exec")
-        self.assertEqual(updated.policy["model"], "gpt-5")
+        self.assertEqual(updated.policy["type"], "agent_exec")
+        self.assertEqual(updated.policy["backend"], "claude")
+        self.assertEqual(updated.policy["model"], "sonnet")
         self.assertEqual(updated.policy["timeout_seconds"], 24.0)
-        self.assertEqual(updated.policy["recent_transition_limit"], 5)
         self.assertEqual(updated.policy["strategy_context"], "momentum")
-        self.assertIn("cwd", updated.policy)
+
+    def test_agent_codex_sets_codex_backend(self) -> None:
+        config = RuntimeConfig.from_mapping(
+            {
+                "competition_id": 4,
+                "symbol": "BTCUSDT",
+            }
+        )
+        args = type(
+            "Args",
+            (),
+            {
+                "agent": "codex",
+                "model": "gpt-5",
+                "timeout_seconds": 45.0,
+                "recent_transitions": 5,
+                "extra_instructions": "",
+                "strategy_context": "",
+            },
+        )()
+
+        updated = _apply_agent_override(config, args)
+        self.assertEqual(updated.policy["type"], "agent_exec")
+        self.assertEqual(updated.policy["backend"], "codex")
+
+    def test_agent_auto_sets_auto_backend(self) -> None:
+        config = RuntimeConfig.from_mapping(
+            {
+                "competition_id": 4,
+                "symbol": "BTCUSDT",
+            }
+        )
+        args = type(
+            "Args",
+            (),
+            {
+                "agent": "auto",
+                "model": None,
+                "timeout_seconds": 45.0,
+                "recent_transitions": 5,
+                "extra_instructions": "",
+                "strategy_context": "",
+            },
+        )()
+
+        updated = _apply_agent_override(config, args)
+        self.assertEqual(updated.policy["type"], "agent_exec")
+        self.assertEqual(updated.policy["backend"], "auto")
 
     def test_run_subcommand_invokes_runtime(self) -> None:
         config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
@@ -67,9 +114,10 @@ class RunCLITest(unittest.TestCase):
         ) as runtime_cls:
             from arena_agent.__main__ import main
 
-            main(["run", "--agent", "codex", "--config", "arena_agent/config/agent_config.yaml"])
+            main(["run", "--agent", "claude", "--config", "arena_agent/config/agent_config.yaml"])
 
-        self.assertEqual(runtime_cls.call_args.args[0].policy["type"], "codex_exec")
+        self.assertEqual(runtime_cls.call_args.args[0].policy["type"], "agent_exec")
+        self.assertEqual(runtime_cls.call_args.args[0].policy["backend"], "claude")
 
 
 if __name__ == "__main__":

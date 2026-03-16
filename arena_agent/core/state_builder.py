@@ -17,14 +17,15 @@ from arena_agent.core.models import (
     PositionSnapshot,
     RuntimeConfig,
 )
-from arena_agent.features.engine import FeatureEngine
+from arena_agent.features.engine import FeatureEngine, resolve_indicator_specs
 
 
 class StateBuilder:
     def __init__(self, adapter: EnvironmentAdapter, config: RuntimeConfig) -> None:
         self.adapter = adapter
         self.config = config
-        self.feature_engine = FeatureEngine(config.signal_indicators)
+        resolved_specs = resolve_indicator_specs(config.policy, config.signal_indicators)
+        self.feature_engine = FeatureEngine(resolved_specs)
 
     def build(self) -> AgentState:
         market_info = self.adapter.get_market_info(self.config.symbol)

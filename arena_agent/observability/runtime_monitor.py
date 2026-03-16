@@ -47,7 +47,7 @@ def build_empty_snapshot() -> dict[str, Any]:
             "runtime_error_count": 0,
             "agent_error_count": 0,
             "tap_error_count": 0,
-            "codex_error_count": 0,
+            "cli_error_count": 0,
             "rejected_action_count": 0,
             "state_guard_failure_count": 0,
             "position_drift_count": 0,
@@ -321,9 +321,9 @@ class RuntimeMonitor:
             if reason and str(reason).startswith("tap_error:"):
                 self._register_agent_issue_locked("tap_error", str(reason))
                 self._append_log_locked("WARNING", "arena_agent.tap", str(reason))
-            elif reason and str(reason).startswith("codex_error:"):
-                self._register_agent_issue_locked("codex_error", str(reason))
-                self._append_log_locked("WARNING", "arena_agent.codex", str(reason))
+            elif reason and str(reason).startswith("cli_error:"):
+                self._register_agent_issue_locked("cli_error", str(reason))
+                self._append_log_locked("WARNING", "arena_agent.cli", str(reason))
             if not bool(getattr(execution_result, "accepted", False)):
                 message = getattr(execution_result, "message", "execution rejected")
                 health["rejected_action_count"] = int(health.get("rejected_action_count") or 0) + 1
@@ -416,8 +416,8 @@ class RuntimeMonitor:
         health["agent_error_count"] = int(health.get("agent_error_count") or 0) + 1
         if category == "tap_error":
             health["tap_error_count"] = int(health.get("tap_error_count") or 0) + 1
-        if category == "codex_error":
-            health["codex_error_count"] = int(health.get("codex_error_count") or 0) + 1
+        if category == "cli_error":
+            health["cli_error_count"] = int(health.get("cli_error_count") or 0) + 1
         health["last_error_category"] = category
         health["last_error_message"] = message
         health["last_error_timestamp"] = time.time()

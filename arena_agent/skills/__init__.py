@@ -1,1 +1,1 @@
-"""Local CLI skills for Codex-style tool use."""
+"""Local CLI skills for agent tool use."""

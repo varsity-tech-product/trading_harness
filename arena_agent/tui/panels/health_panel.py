@@ -22,7 +22,7 @@ class HealthPanel(Static):
         table.add_row("runtime_errors", _fmt(health.get("runtime_error_count")))
         table.add_row("agent_errors", _fmt(health.get("agent_error_count")))
         table.add_row("tap_errors", _fmt(health.get("tap_error_count")))
-        table.add_row("codex_errors", _fmt(health.get("codex_error_count")))
+        table.add_row("cli_errors", _fmt(health.get("cli_error_count")))
         table.add_row("rejected", _fmt(health.get("rejected_action_count")))
         table.add_row("guard_failures", _fmt(health.get("state_guard_failure_count")))
         table.add_row("position_drift", _fmt(health.get("position_drift_count")))

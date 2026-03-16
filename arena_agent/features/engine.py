@@ -11,12 +11,41 @@ from arena_agent.core.models import Candle, FeatureSpec, SignalState
 from arena_agent.features.registry import (
     REGISTRY,
     feature_key,
+    get_full_indicator_specs,
     get_indicator_definition,
     indicator_requires_supported_inputs,
     lookback_required,
     normalize_indicator_name,
     normalize_params,
 )
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
+
+
+def resolve_indicator_specs(
+    policy_config: dict[str, Any],
+    fallback_specs: list[FeatureSpec],
+) -> list[FeatureSpec]:
+    """Resolve which indicators to compute based on policy config.
+
+    Modes:
+      - ``"full"``    — all builtin indicators (+ TA-Lib curated if available).
+      - ``"custom"``  — use ``policy.signal_indicators`` list.
+      - (default)     — use *fallback_specs* (top-level ``signal_indicators``).
+    """
+    mode = str(policy_config.get("indicator_mode", "")).lower()
+
+    if mode == "full":
+        return [FeatureSpec.from_mapping(s) for s in get_full_indicator_specs(include_talib=True)]
+
+    if mode == "custom":
+        raw = policy_config.get("signal_indicators", [])
+        return [FeatureSpec.from_mapping(s) for s in raw]
+
+    return list(fallback_specs)
 
 
 class FeatureEngine:

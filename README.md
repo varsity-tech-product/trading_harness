@@ -29,13 +29,14 @@ Current status: this repo contains a working v1 trading-agent runtime for the Va
 - SDK:
   - `arena_agent/sdk/`
   - `examples/sdk_quickstart.py`
-- Codex policy:
-  - `arena_agent/agents/codex_policy.py`
-  - `arena_agent/agents/codex_prompt_template.md`
+- Agent exec policy (CLI-backed, supports Claude Code and Codex):
+  - `arena_agent/agents/agent_exec_policy.py`
+  - `arena_agent/agents/prompt_template.md`
+  - `arena_agent/agents/action_schema.json`
   - `arena_agent/config/codex_agent_config.yaml`
 - Terminal monitor:
   - `arena_agent/tui/`
-  - `python3 -m arena_agent monitor`
+  - `.venv/bin/python -m arena_agent monitor`
 
 ## Current architecture
 
@@ -106,6 +107,24 @@ Notes:
 - `indicator_metadata[*].lookback_required` is the normalized warmup requirement for that indicator.
 - Use explicit `key` values for indicators with large or structured params.
 
+### Policy-driven indicator selection
+
+The policy can control which indicators are computed via `indicator_mode` in the policy config section:
+
+| Mode | Behavior |
+|------|----------|
+| `full` | Computes all builtin indicators with default params, plus a curated set of TA-Lib indicators if available. The agent sees everything and picks what matters. |
+| `custom` | Uses a `signal_indicators` list declared in the policy section. |
+| *(omitted)* | Falls back to the top-level `signal_indicators` in the runtime config (backward compatible). |
+
+Example:
+
+```yaml
+policy:
+  type: agent_exec
+  indicator_mode: full
+```
+
 ## External-agent support
 
 There is a minimal TAP layer in `arena_agent/tap/` for plug-in agents.
@@ -126,7 +145,7 @@ That makes live trading decisions auditable after the fact through the transitio
 
 ## Local skill tools
 
-The repo now exposes the runtime as local CLI tools for Codex-style tool use. These tools auto-load `.env.runtime.local` when present and keep secrets in the local host environment rather than passing them to the model.
+The repo now exposes the runtime as local CLI tools for agent tool use. These tools auto-load `.env.runtime.local` when present and keep secrets in the local host environment rather than passing them to the model.
 
 - `arena_market_state`
   - returns the full current `AgentState`
@@ -146,7 +165,6 @@ Examples:
 echo '{"action":"OPEN_LONG","size":0.001}' | ./arena_trade --execute
 ./arena_last_transition
 ./arena_market_state --signal-indicators '[{"indicator":"SMA","params":{"period":20}},{"indicator":"RSI","params":{"period":14}}]'
-./arena_market_state --signal-indicators '[{"indicator":"MAVP","key":"mavp_test","params":{"minperiod":2,"maxperiod":5,"periods":[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]}}]'
 ```
 
 ## MCP server
@@ -251,65 +269,92 @@ agent.run(policy, max_steps=1)
 
 ## Run CLI
 
-The runtime now also supports agent selection from the terminal:
+The runtime supports agent selection from the terminal. `--agent` selects both the policy type and the CLI backend in one flag:
 
 ```bash
-python3 -m arena_agent run --agent rule --config arena_agent/config/agent_config.yaml
-python3 -m arena_agent run --agent claude --config arena_agent/config/tap_agent_config.yaml
-python3 -m arena_agent run --agent codex --config arena_agent/config/codex_agent_config.yaml
+# Use Claude Code as the decision engine
+.venv/bin/python -m arena_agent run --agent claude --config arena_agent/config/codex_agent_config.yaml
+
+# Use Codex CLI as the decision engine
+.venv/bin/python -m arena_agent run --agent codex --model gpt-5
+
+# Auto-detect (prefers Claude Code if installed)
+.venv/bin/python -m arena_agent run --agent auto
+
+# Use an external HTTP TAP endpoint
+.venv/bin/python -m arena_agent run --agent tap --tap-endpoint http://localhost:8080/decision
+
+# Use the rule-based ensemble from YAML config
+.venv/bin/python -m arena_agent run --agent rule --config arena_agent/config/agent_config.yaml
+
+# Keep whatever the YAML config specifies
+.venv/bin/python -m arena_agent run --agent config --config arena_agent/config/agent_config.yaml
 ```
 
-`--agent codex` keeps the runtime loop stateless at the model level. Each tick sends:
+The agent exec policy (`--agent claude`, `--agent codex`, `--agent auto`) keeps the runtime loop stateless at the model level. Each tick sends:
 
 - current market and account state
 - current position
-- computed features
+- computed features (with `indicator_catalog` listing all available indicators)
 - recent transition summaries
 - risk limits
 - a compact agent summary
 
-The Codex policy then returns one strict JSON action through `codex exec`. The runtime remains the single owner of execution, validation, and transition persistence.
+The CLI agent then returns one strict JSON action. The runtime remains the single owner of execution, validation, and transition persistence.
 
-The prompt contract is now externalized in:
+Additional CLI options for agent exec:
 
-- `arena_agent/agents/codex_prompt_template.md`
-- `arena_agent/agents/codex_action_schema.json`
+```bash
+--model <model>                   # Model override (e.g. sonnet, opus)
+--timeout-seconds <seconds>       # Decision timeout (default: 45)
+--extra-instructions <text>       # Extra prompt instructions
+--strategy-context <text>         # Strategy context hint
+--recent-transitions <count>      # Transition memory depth (default: 5)
+```
 
-That makes the state contract and action contract explicit for Codex-style terminal agents.
+The prompt contract is externalized in:
+
+- `arena_agent/agents/prompt_template.md`
+- `arena_agent/agents/action_schema.json`
+
+That makes the state contract and action contract explicit for any CLI-backed agent.
 
 ## Terminal Observability Monitor
 
-The runtime now exposes a direct local observability stream for terminal monitoring. This is not a log parser. The runtime publishes structured snapshots over a localhost TCP stream, and the monitor renders:
+The runtime exposes a direct local observability stream for terminal monitoring. This is not a log parser. The runtime publishes structured snapshots over a localhost TCP stream, and the monitor renders:
 
 - current market state
 - account and position state
 - computed features
 - last decision and execution result
 - recent transitions
-- runtime and TAP warnings/errors
+- runtime and agent warnings/errors
 
-The snapshot now also carries explicit health metrics, including:
+The snapshot carries explicit health metrics, including:
 
 - decision latency
 - last decision age
 - last transition age
 - runtime error counts
-- agent error counts
+- agent error counts (cli_errors, tap_errors)
 - rejected action counts
 
-The monitor entrypoints are:
+Run the agent and TUI in two terminals:
 
 ```bash
-python3 -m arena_agent monitor --port 8765
-python3 -m arena_agent.tui --port 8765
+# Terminal 1: agent
+.venv/bin/python -m arena_agent run --agent claude --config arena_agent/config/codex_agent_config.yaml
+
+# Terminal 2: TUI monitor
+.venv/bin/python -m arena_agent monitor --port 8767
 ```
 
 The current live configs expose monitor ports:
 
 - `arena_agent/config/agent_live.yaml`
   - `127.0.0.1:8765`
-- `arena_agent/config/tap_agent_config.yaml`
-  - `127.0.0.1:8766`
+- `arena_agent/config/codex_agent_config.yaml`
+  - `127.0.0.1:8767`
 
 The Textual UI is an optional dependency. Install it locally with:
 
@@ -329,8 +374,12 @@ Configs live in `arena_agent/config/`.
 
 - `agent_config.yaml`
   - local rule/ensemble runtime example
+- `codex_agent_config.yaml`
+  - agent exec policy with `indicator_mode: full`
 - `tap_agent_config.yaml`
   - external HTTP policy example
+- `agent_live.yaml`
+  - production monitoring setup
 
 `VARSITY_API_KEY` must be injected via the runtime environment before starting the runtime.
 
@@ -345,31 +394,26 @@ For local convenience, this repo also supports an ignored runtime env file:
 
 - `.env.runtime.local`
 - `.env.runtime.local.example`
-- `run_live_tap_once.sh`
-- `run_mcp_server.sh`
-
-`run_live_tap_once.sh` sources `.env.runtime.local`, starts the local Claude-backed TAP server, and runs one or more runtime iterations without re-entering secrets manually.
 
 Example:
 
 ```bash
 cp .env.runtime.local.example .env.runtime.local
-# fill in VARSITY_API_KEY and CLAUDE_CODE_OAUTH_TOKEN once
-./run_live_tap_once.sh 1
+# fill in VARSITY_API_KEY once
 ```
 
 ## Verification status
 
 Local verification currently passes:
 
-- `python3 -m unittest discover -s tests -v`
-- `python3 -m compileall arena_agent run_agent.py varsity_tools.py tests`
+- `python3 -m pytest tests/ -v`
 
 Current automated tests cover:
 
 - state normalization
 - versioned signal-state contract
 - generic TA-Lib-backed indicators plus builtin fallback
+- policy-driven indicator resolution (full, custom, fallback)
 - inferred position fallback from unresolved live trades
 - execution sizing and validation
 - transition-oriented runtime flow
@@ -379,49 +423,36 @@ Current automated tests cover:
 - TAP HTTP fallback behavior
 - MCP tool wrappers
 - SDK view and action helpers
+- agent exec policy with both Claude Code and Codex backends
+- CLI backend auto-detection and markdown fence stripping
 
 ## Known limitations
 
 - Live Arena reads, MCP calls, SDK calls, requested indicator computation, and real Arena trade writes have been exercised from this environment.
 - A live Claude-driven run opened and managed real positions successfully, and a Claude-opened live trade was closed profitably in one earlier run.
-- A later 10-minute live validation run confirmed that Claude rationales are now captured in transition data while it opened and managed a real long position.
 - Timed live runs can still end with an open position unless the runner explicitly closes it at shutdown.
-- The repo still contains legacy script bots alongside the new runtime.
-- The repo currently includes generated files and caches from earlier work; cleanup has not been completed yet.
-
-Live indicator checks completed in this environment include:
-
-- `SMA`
-- `RSI`
-- `OBV`
-- `MACD`
-- `AVGPRICE`
-- `STOCH`
-- `CDLDOJI`
-- `ATR`
-- `MAVP` with an explicit `periods` input series
 
 ## File map
 
 ```text
 arena_agent/
   core/         runtime loop, models, adapter, state builder
-  features/     versioned feature engine and indicator registry
+  features/     versioned feature engine, indicator registry, and presets
   interfaces/   action schema and policy interface
   execution/    order execution
   memory/       transition store and journal
-  agents/       built-in policies and optional reward models
+  agents/       agent exec policy, built-in rule policies, reward models
   tap/          minimal external-agent HTTP adapter
   skills/       local CLI skill implementations
   mcp/          MCP server and plain tool wrappers
   sdk/          thin developer SDK on top of MCP
+  tui/          Textual terminal monitor
   config/       sample configs
-tests/          unit tests for runtime, executor, state builder, TAP
-run_live_tap_once.sh
+  observability/ runtime health monitoring and TCP snapshot streaming
+tests/          unit tests
+run_agent.py
 run_mcp_server.sh
-arena_market_state
-arena_trade
-arena_last_transition
-arena_competition_info
+run_continuous_agent.sh
 examples/sdk_quickstart.py
+ops/systemd/arena-agent.service
 ```
