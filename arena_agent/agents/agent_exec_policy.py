@@ -23,7 +23,7 @@ from arena_agent.tap.protocol import parse_decision_response
 DEFAULT_SCHEMA_PATH = Path(__file__).with_name("action_schema.json")
 DEFAULT_PROMPT_TEMPLATE_PATH = Path(__file__).with_name("prompt_template.md")
 
-VALID_BACKENDS = ("auto", "codex", "claude", "gemini")
+VALID_BACKENDS = ("auto", "codex", "claude", "gemini", "openclaw")
 
 _FENCE_RE_PATTERN = None
 
@@ -44,7 +44,7 @@ def resolve_backend(backend: str, command: str | None) -> str:
 
     Returns ``"claude"``, ``"gemini"``, or ``"codex"``.
     """
-    if backend in ("codex", "claude", "gemini"):
+    if backend in ("codex", "claude", "gemini", "openclaw"):
         return backend
     if backend != "auto":
         raise ValueError(f"Invalid backend {backend!r}. Must be one of {VALID_BACKENDS}.")
@@ -55,16 +55,20 @@ def resolve_backend(backend: str, command: str | None) -> str:
             return "claude"
         if "gemini" in cmd_name:
             return "gemini"
+        if "openclaw" in cmd_name:
+            return "openclaw"
         return "codex"
-    # Auto-detect from PATH – prefer claude > gemini > codex.
+    # Auto-detect from PATH – prefer claude > gemini > openclaw > codex.
     if shutil.which("claude"):
         return "claude"
     if shutil.which("gemini"):
         return "gemini"
+    if shutil.which("openclaw"):
+        return "openclaw"
     if shutil.which("codex"):
         return "codex"
     raise RuntimeError(
-        "No supported CLI found in PATH (claude, gemini, codex). "
+        "No supported CLI found in PATH (claude, gemini, openclaw, codex). "
         "Install one or set backend/command explicitly in the policy config."
     )
 
@@ -192,6 +196,8 @@ class AgentExecPolicy(Policy):
             return self._run_claude(prompt)
         if self._resolved_backend == "gemini":
             return self._run_gemini(prompt)
+        if self._resolved_backend == "openclaw":
+            return self._run_openclaw(prompt)
         return self._run_codex(prompt)
 
     def _run_codex(self, prompt: str) -> dict[str, Any]:
@@ -338,6 +344,77 @@ class AgentExecPolicy(Policy):
             raise ValueError(f"gemini result is not valid JSON: {result_text[:500]}") from exc
         if not isinstance(payload, dict):
             raise ValueError(f"gemini payload must be an object, got: {payload!r}")
+        return payload
+
+    def _run_openclaw(self, prompt: str) -> dict[str, Any]:
+        command = [
+            self.command,
+            "agent",
+            "--local",
+            "--json",
+            "--agent", "main",
+            "--message", prompt,
+        ]
+        if self.model:
+            # OpenClaw uses the model configured in its auth/config.
+            # Pass as env override or skip — the --message is the main input.
+            pass
+
+        decision_cwd = self.cwd or tempfile.gettempdir()
+        env = dict(self.subprocess_runner.__self__.__dict__) if False else None  # noqa
+        result = self.subprocess_runner(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=decision_cwd,
+            timeout=self.timeout_seconds,
+            check=False,
+        )
+        if result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"openclaw failed with code={result.returncode}: {stderr[:500]}")
+        raw_output = (result.stdout or "").strip()
+        if not raw_output:
+            raise RuntimeError("openclaw returned empty output")
+
+        # OpenClaw --json wraps: {"payloads": [{"text": "..."}], "meta": {...}}
+        # The model response is in payloads[0].text
+        # stderr may contain diagnostic lines starting with [ — ignore those in stdout
+        # Filter out ANSI-colored log lines that leak to stdout
+        json_lines = []
+        brace_depth = 0
+        for line in raw_output.split("\n"):
+            stripped = line.lstrip()
+            if brace_depth == 0 and not stripped.startswith("{"):
+                continue
+            json_lines.append(line)
+            brace_depth += line.count("{") - line.count("}")
+            if brace_depth <= 0:
+                break
+        clean_output = "\n".join(json_lines)
+        if not clean_output:
+            raise RuntimeError(f"openclaw produced no JSON output: {raw_output[:500]}")
+
+        try:
+            wrapper = json.loads(clean_output)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"openclaw returned invalid JSON: {clean_output[:500]}") from exc
+
+        # Extract model response from payloads[0].text
+        payloads = wrapper.get("payloads", [])
+        if payloads and isinstance(payloads, list) and isinstance(payloads[0], dict):
+            result_text = str(payloads[0].get("text", "")).strip()
+        else:
+            result_text = clean_output
+
+        result_text = _strip_markdown_fences(result_text)
+
+        try:
+            payload = json.loads(result_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"openclaw result is not valid JSON: {result_text[:500]}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"openclaw payload must be an object, got: {payload!r}")
         return payload
 
     def _load_recent_transition_summaries(self) -> list[dict[str, Any]]:

@@ -145,11 +145,15 @@ class ResolveBackendTest(unittest.TestCase):
     def test_explicit_gemini(self) -> None:
         self.assertEqual(resolve_backend("gemini", None), "gemini")
 
+    def test_explicit_openclaw(self) -> None:
+        self.assertEqual(resolve_backend("openclaw", None), "openclaw")
+
     def test_auto_infers_from_command_name(self) -> None:
         self.assertEqual(resolve_backend("auto", "/usr/local/bin/claude"), "claude")
         self.assertEqual(resolve_backend("auto", "codex"), "codex")
         self.assertEqual(resolve_backend("auto", "/opt/bin/claude-code"), "claude")
         self.assertEqual(resolve_backend("auto", "/usr/bin/gemini"), "gemini")
+        self.assertEqual(resolve_backend("auto", "/usr/bin/openclaw"), "openclaw")
 
     def test_invalid_backend_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -427,6 +431,83 @@ class GeminiBackendTest(unittest.TestCase):
         self.assertIn("cli_error", result.metadata["reason"])
 
 
+class OpenClawBackendTest(unittest.TestCase):
+    def test_openclaw_parses_structured_action(self) -> None:
+        captured = {}
+
+        def runner(command, **kwargs):
+            captured["command"] = command
+            # OpenClaw --json wraps in {"payloads": [{"text": "..."}], "meta": {...}}
+            stdout = json.dumps({
+                "payloads": [
+                    {"text": json.dumps(DECISION_PAYLOAD), "mediaUrl": None}
+                ],
+                "meta": {
+                    "durationMs": 5000,
+                    "agentMeta": {"model": "claude-opus-4-6"},
+                },
+            })
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        policy = AgentExecPolicy(
+            backend="openclaw",
+            subprocess_runner=runner,
+            cwd="/tmp",
+        )
+
+        result = policy.decide(make_state())
+
+        self.assertEqual(result.type, ActionType.OPEN_LONG)
+        self.assertAlmostEqual(result.size or 0.0, 0.01)
+        self.assertEqual(result.metadata["source"], "openclaw_exec")
+        self.assertEqual(result.metadata["cli_backend"], "openclaw")
+        # OpenClaw uses "agent --local --json --agent main --message"
+        self.assertIn("agent", captured["command"])
+        self.assertIn("--local", captured["command"])
+        self.assertIn("--json", captured["command"])
+
+    def test_openclaw_handles_log_lines_in_stdout(self) -> None:
+        """OpenClaw mixes ANSI-colored log lines with JSON on stdout."""
+
+        def runner(command, **kwargs):
+            # Simulates real OpenClaw output with log lines before JSON
+            stdout = (
+                '[31m[bedrock-discovery][39m [33mFailed to list models[39m\n'
+                + json.dumps({
+                    "payloads": [{"text": json.dumps(DECISION_PAYLOAD)}],
+                    "meta": {},
+                })
+            )
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        policy = AgentExecPolicy(backend="openclaw", subprocess_runner=runner, cwd="/tmp")
+        result = policy.decide(make_state())
+        self.assertEqual(result.type, ActionType.OPEN_LONG)
+
+    def test_openclaw_handles_markdown_fences(self) -> None:
+        fenced = '```json\n' + json.dumps(DECISION_PAYLOAD) + '\n```'
+
+        def runner(command, **kwargs):
+            stdout = json.dumps({
+                "payloads": [{"text": fenced}],
+                "meta": {},
+            })
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        policy = AgentExecPolicy(backend="openclaw", subprocess_runner=runner, cwd="/tmp")
+        result = policy.decide(make_state())
+        self.assertEqual(result.type, ActionType.OPEN_LONG)
+
+    def test_openclaw_fails_open_to_hold(self) -> None:
+        def runner(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="auth error")
+
+        policy = AgentExecPolicy(backend="openclaw", subprocess_runner=runner, fail_open_to_hold=True)
+        result = policy.decide(make_state())
+        self.assertEqual(result.type, ActionType.HOLD)
+        self.assertIn("cli_error", result.metadata["reason"])
+
+
 class PolicyFactoryTest(unittest.TestCase):
     def test_factory_builds_codex_policy_default(self) -> None:
         runtime_config = RuntimeConfig.from_mapping(
@@ -495,6 +576,27 @@ class PolicyFactoryTest(unittest.TestCase):
         self.assertEqual(policy._resolved_backend, "gemini")
         self.assertEqual(policy.model, "gemini-2.5-pro")
         self.assertEqual(policy.command, "gemini")
+
+
+    def test_factory_builds_openclaw_policy(self) -> None:
+        runtime_config = RuntimeConfig.from_mapping(
+            {
+                "competition_id": 4,
+                "symbol": "BTCUSDT",
+                "storage": {"transition_path": "/tmp/transitions.jsonl"},
+                "policy": {
+                    "type": "agent_exec",
+                    "backend": "openclaw",
+                    "timeout_seconds": 60,
+                },
+            }
+        )
+
+        policy = build_policy(runtime_config.policy, runtime_config=runtime_config)
+
+        self.assertIsInstance(policy, AgentExecPolicy)
+        self.assertEqual(policy._resolved_backend, "openclaw")
+        self.assertEqual(policy.command, "openclaw")
 
 
 if __name__ == "__main__":

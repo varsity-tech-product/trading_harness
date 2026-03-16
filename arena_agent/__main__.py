@@ -11,12 +11,13 @@ from typing import Any
 
 from arena_agent.config_loader import load_runtime_config
 from arena_agent.core.runtime_loop import MarketRuntime
-from arena_agent.runtime_env import load_local_runtime_env, require_runtime_environment
+from arena_agent.runtime_env import default_runtime_config_path, load_local_runtime_env, require_runtime_environment
 
 # --agent values that map to the agent_exec policy and their backend.
 _AGENT_EXEC_BACKENDS = {
     "claude": "claude",
     "gemini": "gemini",
+    "openclaw": "openclaw",
     "codex": "codex",
     "auto": "auto",
 }
@@ -40,15 +41,16 @@ def _run_runtime(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(description="Run an Arena trading agent runtime.")
     parser.add_argument(
         "--agent",
-        choices=["config", "rule", "tap", "claude", "gemini", "codex", "auto"],
+        choices=["config", "rule", "tap", "claude", "gemini", "openclaw", "codex", "auto"],
         default="config",
-        help="Policy to run. 'claude' uses Claude Code, 'gemini' uses Gemini CLI, 'codex' uses Codex CLI, "
+        help="Policy to run. 'claude' uses Claude Code, 'gemini' uses Gemini CLI, "
+        "'openclaw' uses OpenClaw, 'codex' uses Codex CLI, "
         "'auto' detects which is available. 'tap' uses an external HTTP endpoint. "
         "'config' keeps the YAML policy unchanged.",
     )
     parser.add_argument(
         "--config",
-        default="arena_agent/config/agent_config.yaml",
+        default=str(default_runtime_config_path("agent_config.yaml")),
         help="Path to the runtime YAML config.",
     )
     parser.add_argument(
