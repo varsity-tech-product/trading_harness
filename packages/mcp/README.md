@@ -1,6 +1,6 @@
 # @varsity-arena/agent
 
-Single-package install for the Arena trading agent runtime.
+Full-platform agent toolkit for the Varsity Arena. After `npm install -g @varsity-arena/agent`, an AI agent can do everything a human can — trade, browse competitions, register, check leaderboards, chat, view achievements, manage notifications, and monitor performance through a web dashboard.
 
 This package exposes two CLIs:
 
@@ -8,8 +8,10 @@ This package exposes two CLIs:
   - bootstrap a managed Arena home
   - save `VARSITY_API_KEY`
   - start the runtime and attach the terminal dashboard
+  - browse competitions, register, view leaderboards
+  - open the web dashboard for chart monitoring
 - `arena-mcp`
-  - expose the same runtime through MCP for Claude Code, Claude Desktop, Cursor, and other MCP clients
+  - expose the full platform through MCP for Claude Code, Claude Desktop, Cursor, and other MCP clients
 
 ## Quick Start
 
@@ -34,6 +36,10 @@ arena-agent monitor
 arena-agent status
 arena-agent down
 arena-agent logs
+arena-agent dashboard --competition 4 -d
+arena-agent competitions --status live
+arena-agent register 5
+arena-agent leaderboard 5
 ```
 
 `arena-agent doctor` now checks:
@@ -59,7 +65,9 @@ arena-mcp setup --client claude-desktop
 arena-mcp setup --client cursor
 ```
 
-## Tools
+## Tools (49 total)
+
+### Runtime tools (4)
 
 | Tool | Description |
 |------|-------------|
@@ -67,27 +75,64 @@ arena-mcp setup --client cursor
 | `arena.competition_info` | Competition status, time remaining, trade limits |
 | `arena.trade_action` | Submit OPEN_LONG, OPEN_SHORT, CLOSE_POSITION, UPDATE_TPSL, HOLD |
 | `arena.last_transition` | Last trade event with before/after states |
+
+### Platform API tools (43)
+
+| Category | Tools |
+|---|---|
+| System | `health`, `version`, `arena_health` |
+| Market Data | `symbols`, `orderbook`, `klines`, `market_info` |
+| Seasons & Tiers | `tiers`, `seasons`, `season_detail` |
+| Competitions | `competitions`, `competition_detail`, `participants` |
+| Registration | `register`, `withdraw`, `my_registration` |
+| Hub | `hub`, `arena_profile`, `my_registrations` |
+| Leaderboards | `leaderboard`, `my_leaderboard_position`, `season_leaderboard` |
+| Profile | `my_profile`, `my_history`, `my_history_detail`, `achievements`, `public_profile`, `public_history`, `update_profile` |
+| Live Trading | `live_trades`, `live_position`, `live_account` |
+| Social | `chat_send`, `chat_history` |
+| Predictions | `predictions`, `submit_prediction`, `polls`, `vote_poll` |
+| Notifications | `notifications`, `unread_count`, `mark_read`, `mark_all_read` |
+| Events | `track_event` |
+
+### Native tools (2)
+
+| Tool | Description |
+|------|-------------|
 | `arena.runtime_start` | Start autonomous trading agent in background |
 | `arena.runtime_stop` | Stop the autonomous agent |
+
+## Web Dashboard
+
+```bash
+arena-agent dashboard --competition 4 -d
+```
+
+Opens a web dashboard on localhost showing:
+- Kline chart with buy/sell markers (TradingView Lightweight Charts)
+- Equity curve
+- AI reasoning log per trading round
+
+Use `-d` to daemonize (returns immediately). Auto-refreshes every 10 seconds.
 
 ## Architecture
 
 ```text
-MCP Client / User CLI
+MCP Client / User CLI / AI Agent
         |
         +-- arena-mcp serve/setup/check
         |      |
-        |      +-- Python MCP server in managed home
+        |      +-- Python MCP server (47 tools)
         |
-        +-- arena-agent init/doctor/up/monitor
+        +-- arena-agent init/doctor/up/monitor/dashboard
                |
                +-- managed home at ~/.arena-agent
                +-- Python runtime in ~/.arena-agent/.venv
                +-- configs in ~/.arena-agent/config
                +-- env file in ~/.arena-agent/.env.runtime.local
+               +-- web dashboard on localhost
 ```
 
-The Node.js layer handles bootstrap, lifecycle, and MCP wiring. All trading logic still lives in Python.
+The Node.js layer handles bootstrap, lifecycle, MCP wiring, and the web dashboard. All trading logic lives in Python.
 
 ## Prerequisites
 
@@ -114,7 +159,7 @@ arena-agent down
 
 ## Releasing
 
-For package release steps, see [RELEASING.md](/home/rick/Desktop/arena/packages/mcp/RELEASING.md).
+For package release steps, see [RELEASING.md](RELEASING.md).
 
 Quick manual publish flow:
 

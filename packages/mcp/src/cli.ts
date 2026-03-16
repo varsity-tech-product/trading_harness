@@ -22,6 +22,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { createInterface } from "node:readline/promises";
 
 import { serve } from "./index.js";
+import { PythonBridge } from "./python-bridge.js";
+import { startDashboard } from "./dashboard/serve.js";
 import { findArenaRoot, findPython } from "./util/paths.js";
 import { checkPythonEnvironment } from "./setup/detect-python.js";
 import { CLIENT_SETUP } from "./setup/client-configs.js";
@@ -116,13 +118,16 @@ async function main(): Promise<void> {
     const configPath = setupFn(root);
     console.log(`\nConfigured ${clientName} at: ${configPath}`);
     console.log(`Arena home: ${root}`);
-    console.log("\nTools available:");
-    console.log("  arena.market_state       Get market/account/position state");
-    console.log("  arena.competition_info   Competition metadata");
-    console.log("  arena.trade_action       Submit a trade");
-    console.log("  arena.last_transition    Last trade event");
-    console.log("  arena.runtime_start      Start autonomous agent");
-    console.log("  arena.runtime_stop       Stop autonomous agent");
+    console.log("\nTools available (29 total):");
+    console.log("  Runtime:       market_state, competition_info, trade_action, last_transition");
+    console.log("  Market:        symbols, orderbook, klines, market_info");
+    console.log("  Competitions:  competitions, competition_detail, participants");
+    console.log("  Registration:  register, withdraw, my_registration");
+    console.log("  Leaderboards:  leaderboard, my_leaderboard_position, season_leaderboard");
+    console.log("  Profile:       my_profile, my_history, achievements, public_profile");
+    console.log("  Social:        chat_send, chat_history");
+    console.log("  Notifications: notifications, unread_count, mark_read");
+    console.log("  System:        health, runtime_start, runtime_stop");
     return;
   }
 
@@ -163,6 +168,26 @@ async function main(): Promise<void> {
 
   if (command === "logs") {
     runLogs();
+    return;
+  }
+
+  if (command === "dashboard") {
+    await runDashboard();
+    return;
+  }
+
+  if (command === "competitions") {
+    await runCompetitions();
+    return;
+  }
+
+  if (command === "register") {
+    await runRegister();
+    return;
+  }
+
+  if (command === "leaderboard") {
+    await runLeaderboard();
     return;
   }
 
@@ -642,6 +667,10 @@ function printUsage(invocation: string): void {
   console.log("  status                   Show runtime pid, config, and monitor port");
   console.log("  down                     Stop the background runtime");
   console.log("  logs                     Print recent runtime logs");
+  console.log("  dashboard                Open web dashboard (kline, equity, AI reasoning). Use -d to daemonize.");
+  console.log("  competitions             List active competitions");
+  console.log("  register <id>            Register for a competition");
+  console.log("  leaderboard <id>         View competition leaderboard");
   console.log("");
   console.log("Examples:");
   console.log("  arena-agent init");
@@ -650,6 +679,10 @@ function printUsage(invocation: string): void {
   console.log("  arena-agent up --no-monitor --daemon");
   console.log("  arena-agent upgrade");
   console.log("  arena-mcp setup --client claude-code");
+  console.log("  arena-agent dashboard --competition 5 -d");
+  console.log("  arena-agent competitions --status live");
+  console.log("  arena-agent register 5");
+  console.log("  arena-agent leaderboard 5");
 }
 
 function optionValue(name: string): string | undefined {
@@ -809,6 +842,165 @@ function runLogs(): void {
   }
   const lines = Number(optionValue("--lines") ?? "50");
   console.log(tailLines(logPath, lines));
+}
+
+async function runDashboard(): Promise<void> {
+  const home = resolveConfiguredHome(optionValue("--home"));
+  const port = Number(optionValue("--port") ?? "3000");
+  const competitionId = optionValue("--competition")
+    ? Number(optionValue("--competition"))
+    : undefined;
+
+  // Find transitions file from artifacts dir
+  let transitionsPath = optionValue("--transitions") ?? undefined;
+  if (!transitionsPath) {
+    const artifactsDir = resolve(home, "artifacts");
+    if (existsSync(artifactsDir)) {
+      transitionsPath = artifactsDir;
+    }
+  }
+
+  const daemon = hasFlag("--daemon") || hasFlag("-d");
+
+  if (daemon) {
+    // Spawn dashboard as a detached background process
+    const args = process.argv.slice(1).filter(a => a !== "--daemon" && a !== "-d");
+    const child = spawn(process.execPath, args, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: "ignore",
+      detached: true,
+    });
+    child.unref();
+    const url = `http://localhost:${port}`;
+    console.log(`Dashboard running in background (pid ${child.pid ?? "?"}).`);
+    console.log(`Open ${url} in your browser.`);
+    if (competitionId) console.log(`Competition: ${competitionId}`);
+
+    // Try to open browser
+    try {
+      const openCmd = process.platform === "darwin"
+        ? `open "${url}"`
+        : process.platform === "win32"
+          ? `start "${url}"`
+          : `xdg-open "${url}" 2>/dev/null || true`;
+      spawn("sh", ["-c", openCmd], { stdio: "ignore", detached: true }).unref();
+    } catch {}
+    return;
+  }
+
+  // Foreground mode — start server and keep running
+  startDashboard({
+    arenaRoot: home,
+    port,
+    competitionId,
+    transitionsPath,
+  });
+
+  // Try to open browser
+  const url = `http://localhost:${port}`;
+  try {
+    const openCmd = process.platform === "darwin"
+      ? `open "${url}"`
+      : process.platform === "win32"
+        ? `start "${url}"`
+        : `xdg-open "${url}" 2>/dev/null || true`;
+    spawn("sh", ["-c", openCmd], { stdio: "ignore", detached: true }).unref();
+  } catch {}
+}
+
+async function runCompetitions(): Promise<void> {
+  const home = resolveConfiguredHome(optionValue("--home"));
+  const bridge = new PythonBridge(home);
+  try {
+    const status = optionValue("--status") ?? undefined;
+    const args: Record<string, unknown> = { page: 1, size: 20 };
+    if (status) args.status = status;
+    const result = await bridge.callTool("varsity.competitions", args) as any;
+    if (result?.error) {
+      console.error(`Error: ${result.error}`);
+      process.exit(1);
+    }
+    const items = result?.items ?? result?.list ?? result;
+    if (!Array.isArray(items) || items.length === 0) {
+      console.log("No competitions found.");
+      return;
+    }
+    console.log("Competitions:\n");
+    for (const c of items) {
+      const id = c.id ?? c.competitionId ?? "?";
+      const name = c.name ?? c.title ?? "Unnamed";
+      const st = c.status ?? "unknown";
+      const type = c.type ?? c.competitionType ?? "";
+      console.log(`  #${id}  ${name}`);
+      console.log(`        Status: ${st}  Type: ${type}`);
+      console.log("");
+    }
+  } finally {
+    await bridge.disconnect();
+  }
+}
+
+async function runRegister(): Promise<void> {
+  const home = resolveConfiguredHome(optionValue("--home"));
+  const idArg = argv[1];
+  if (!idArg || isNaN(Number(idArg))) {
+    console.error("Usage: arena-agent register <competition_id>");
+    process.exit(1);
+  }
+  const bridge = new PythonBridge(home);
+  try {
+    const result = await bridge.callTool("varsity.register", {
+      competition_id: Number(idArg),
+    }) as any;
+    if (result?.error) {
+      console.error(`Error: ${result.error ?? result.message}`);
+      process.exit(1);
+    }
+    console.log(`Registered for competition ${idArg}.`);
+    if (result?.status) {
+      console.log(`Status: ${result.status}`);
+    }
+  } finally {
+    await bridge.disconnect();
+  }
+}
+
+async function runLeaderboard(): Promise<void> {
+  const home = resolveConfiguredHome(optionValue("--home"));
+  const idArg = argv[1];
+  if (!idArg) {
+    console.error("Usage: arena-agent leaderboard <competition_id>");
+    process.exit(1);
+  }
+  const bridge = new PythonBridge(home);
+  try {
+    const result = await bridge.callTool("varsity.leaderboard", {
+      identifier: idArg,
+      page: 1,
+      size: 20,
+    }) as any;
+    if (result?.error) {
+      console.error(`Error: ${result.error ?? result.message}`);
+      process.exit(1);
+    }
+    const items = result?.items ?? result?.list ?? result;
+    if (!Array.isArray(items) || items.length === 0) {
+      console.log("No leaderboard data.");
+      return;
+    }
+    console.log(`Leaderboard for competition ${idArg}:\n`);
+    console.log("  Rank  Username             PnL");
+    console.log("  ----  -------------------  ----------");
+    for (const entry of items) {
+      const rank = String(entry.rank ?? entry.position ?? "?").padStart(4);
+      const user = (entry.username ?? entry.displayName ?? "unknown").padEnd(19);
+      const pnl = entry.pnl ?? entry.totalPnl ?? entry.returnPct ?? "?";
+      console.log(`  ${rank}  ${user}  ${pnl}`);
+    }
+  } finally {
+    await bridge.disconnect();
+  }
 }
 
 main().catch((err) => {

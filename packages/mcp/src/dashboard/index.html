@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Arena Agent Dashboard</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --yellow: #d29922;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* Layout */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    grid-template-rows: 48px 1fr 200px;
+    height: 100vh;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  /* Header */
+  .header {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 24px;
+  }
+  .header .logo {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--blue);
+    letter-spacing: -0.3px;
+  }
+  .header .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .header .stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+  .header .stat-value {
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .header .stat-value.positive { color: var(--green); }
+  .header .stat-value.negative { color: var(--red); }
+
+  /* Charts area */
+  .chart-area {
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+  #kline-chart { width: 100%; height: 100%; }
+
+  /* Equity curve */
+  .equity-area {
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+  .equity-area .section-label {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    z-index: 2;
+  }
+  #equity-chart { width: 100%; height: 100%; }
+
+  /* Reasoning panel */
+  .reasoning-panel {
+    grid-row: 2 / 4;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .reasoning-panel .panel-header {
+    padding: 12px 16px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .reasoning-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+  .reasoning-list::-webkit-scrollbar { width: 6px; }
+  .reasoning-list::-webkit-scrollbar-track { background: transparent; }
+  .reasoning-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .reasoning-entry {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .reasoning-entry:last-child { border-bottom: none; }
+  .reasoning-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .reasoning-action {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+  }
+  .reasoning-action.long { background: rgba(63,185,80,0.15); color: var(--green); }
+  .reasoning-action.short { background: rgba(248,81,73,0.15); color: var(--red); }
+  .reasoning-action.close { background: rgba(139,148,158,0.15); color: var(--text-dim); }
+  .reasoning-action.hold { background: rgba(188,140,255,0.15); color: var(--purple); }
+  .reasoning-time {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .reasoning-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.4;
+    margin-top: 4px;
+  }
+  .reasoning-metrics {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .reasoning-metrics span { color: var(--text-dim); }
+  .reasoning-metrics .val { margin-left: 3px; }
+  .reasoning-metrics .val.pos { color: var(--green); }
+  .reasoning-metrics .val.neg { color: var(--red); }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  /* Status dot */
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .status-dot.live { background: var(--green); animation: pulse 2s infinite; }
+  .status-dot.offline { background: var(--red); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="header">
+    <span class="logo">Arena Agent</span>
+    <div class="stat">
+      <span class="stat-label">Competition</span>
+      <span class="stat-value" id="comp-name">Loading...</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Status</span>
+      <span class="stat-value" id="comp-status">--</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Balance</span>
+      <span class="stat-value" id="balance">--</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Equity</span>
+      <span class="stat-value" id="equity">--</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">PnL</span>
+      <span class="stat-value" id="pnl">--</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Position</span>
+      <span class="stat-value" id="position">--</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Trades</span>
+      <span class="stat-value" id="trade-count">--</span>
+    </div>
+  </div>
+
+  <div class="chart-area">
+    <div id="kline-chart"></div>
+  </div>
+
+  <div class="reasoning-panel">
+    <div class="panel-header">AI Reasoning Log</div>
+    <div class="reasoning-list" id="reasoning-list">
+      <div class="empty-state">Waiting for transitions...</div>
+    </div>
+  </div>
+
+  <div class="equity-area">
+    <span class="section-label">Equity Curve</span>
+    <div id="equity-chart"></div>
+  </div>
+</div>
+
+<script>
+const { createChart, ColorType, CrosshairMode, LineStyle } = LightweightCharts;
+
+// --- Config ---
+let CONFIG = { competition_id: null, transitions_path: null };
+const REFRESH_MS = 10_000;
+
+// --- Kline Chart ---
+const klineContainer = document.getElementById('kline-chart');
+const klineChart = createChart(klineContainer, {
+  layout: { background: { type: ColorType.Solid, color: '#161b22' }, textColor: '#8b949e' },
+  grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+  crosshair: { mode: CrosshairMode.Normal },
+  rightPriceScale: { borderColor: '#30363d' },
+  timeScale: { borderColor: '#30363d', timeVisible: true },
+});
+const candleSeries = klineChart.addCandlestickSeries({
+  upColor: '#3fb950', downColor: '#f85149',
+  borderUpColor: '#3fb950', borderDownColor: '#f85149',
+  wickUpColor: '#3fb950', wickDownColor: '#f85149',
+});
+const markerData = [];
+
+// --- Equity Chart ---
+const equityContainer = document.getElementById('equity-chart');
+const equityChart = createChart(equityContainer, {
+  layout: { background: { type: ColorType.Solid, color: '#161b22' }, textColor: '#8b949e' },
+  grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+  rightPriceScale: { borderColor: '#30363d' },
+  timeScale: { borderColor: '#30363d', timeVisible: true },
+  handleScroll: false,
+  handleScale: false,
+});
+const equitySeries = equityChart.addAreaSeries({
+  lineColor: '#58a6ff',
+  topColor: 'rgba(88,166,255,0.3)',
+  bottomColor: 'rgba(88,166,255,0.02)',
+  lineWidth: 2,
+});
+
+// --- Resize ---
+function handleResize() {
+  klineChart.applyOptions({ width: klineContainer.clientWidth, height: klineContainer.clientHeight });
+  equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
+}
+window.addEventListener('resize', handleResize);
+new ResizeObserver(handleResize).observe(klineContainer);
+new ResizeObserver(handleResize).observe(equityContainer);
+
+// --- API ---
+async function api(path) {
+  const res = await fetch(`/api/${path}`);
+  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  return res.json();
+}
+
+// --- Data loading ---
+async function loadConfig() {
+  try { CONFIG = await api('config'); } catch {}
+}
+
+async function loadKlines() {
+  try {
+    const raw = await api('klines?interval=5m&size=300');
+    const klines = Array.isArray(raw) ? raw : raw?.klines ?? raw?.data ?? [];
+    if (!klines.length) return;
+
+    const data = klines.map(k => ({
+      time: Math.floor((k.openTime ?? k.open_time ?? k.t ?? k[0]) / 1000),
+      open: Number(k.open ?? k.o ?? k[1]),
+      high: Number(k.high ?? k.h ?? k[2]),
+      low: Number(k.low ?? k.l ?? k[3]),
+      close: Number(k.close ?? k.c ?? k[4]),
+    })).sort((a, b) => a.time - b.time);
+
+    candleSeries.setData(data);
+    if (markerData.length) candleSeries.setMarkers(markerData.sort((a, b) => a.time - b.time));
+  } catch (e) {
+    console.error('Klines error:', e);
+  }
+}
+
+async function loadAccount() {
+  if (!CONFIG.competition_id) return;
+  try {
+    const acc = await api(`account?competition_id=${CONFIG.competition_id}`);
+    if (!acc || acc.error) return;
+
+    document.getElementById('balance').textContent = fmt(acc.balance);
+    const eqEl = document.getElementById('equity');
+    eqEl.textContent = fmt(acc.equity);
+
+    const pnl = (acc.unrealizedPnl ?? acc.unrealized_pnl ?? 0) + (acc.realizedPnl ?? acc.realized_pnl ?? 0);
+    const pnlEl = document.getElementById('pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl);
+    pnlEl.className = 'stat-value ' + (pnl >= 0 ? 'positive' : 'negative');
+
+    const tc = acc.tradeCount ?? acc.trade_count ?? '--';
+    document.getElementById('trade-count').textContent = tc;
+  } catch {}
+}
+
+async function loadPosition() {
+  if (!CONFIG.competition_id) return;
+  try {
+    const pos = await api(`position?competition_id=${CONFIG.competition_id}`);
+    const el = document.getElementById('position');
+    if (!pos || pos === 'null' || (typeof pos === 'object' && !pos.direction)) {
+      el.textContent = 'None';
+      el.className = 'stat-value';
+    } else {
+      const dir = pos.direction ?? 'unknown';
+      const size = pos.size ?? '';
+      el.textContent = `${dir.toUpperCase()} ${size}`;
+      el.className = 'stat-value ' + (dir === 'long' ? 'positive' : 'negative');
+    }
+  } catch {}
+}
+
+async function loadCompetition() {
+  if (!CONFIG.competition_id) return;
+  try {
+    const comp = await api(`competition?id=${CONFIG.competition_id}`);
+    if (!comp || comp.error) return;
+    document.getElementById('comp-name').textContent = comp.name ?? comp.title ?? `#${CONFIG.competition_id}`;
+    const statusEl = document.getElementById('comp-status');
+    const status = comp.status ?? 'unknown';
+    statusEl.innerHTML = `<span class="status-dot ${status === 'live' ? 'live' : 'offline'}"></span>${status}`;
+  } catch {}
+}
+
+async function loadTransitions() {
+  try {
+    const transitions = await api('transitions?limit=200');
+    if (!Array.isArray(transitions) || !transitions.length) return;
+
+    // Build equity curve from transitions
+    const equityData = [];
+    const markers = [];
+
+    for (const t of transitions) {
+      const ts = Math.floor(t.timestamp ?? Date.now() / 1000);
+      const metrics = t.metrics ?? {};
+      const action = t.action ?? {};
+      const actionType = (action.type ?? '').toUpperCase();
+
+      // Equity data point
+      const eq = metrics.equity_after ?? metrics.balance_after;
+      if (eq != null) {
+        equityData.push({ time: ts, value: Number(eq) });
+      }
+
+      // Trade markers on kline chart
+      if (actionType.includes('OPEN_LONG') || actionType.includes('OPEN_SHORT')) {
+        const isLong = actionType.includes('LONG');
+        markers.push({
+          time: ts,
+          position: isLong ? 'belowBar' : 'aboveBar',
+          color: isLong ? '#3fb950' : '#f85149',
+          shape: isLong ? 'arrowUp' : 'arrowDown',
+          text: isLong ? 'BUY' : 'SELL',
+        });
+      } else if (actionType.includes('CLOSE')) {
+        markers.push({
+          time: ts,
+          position: 'aboveBar',
+          color: '#8b949e',
+          shape: 'circle',
+          text: 'CLOSE',
+        });
+      }
+    }
+
+    // Update equity chart
+    if (equityData.length) {
+      const deduped = [];
+      const seen = new Set();
+      for (const d of equityData) {
+        if (!seen.has(d.time)) { seen.add(d.time); deduped.push(d); }
+      }
+      equitySeries.setData(deduped.sort((a, b) => a.time - b.time));
+    }
+
+    // Update kline markers
+    markerData.length = 0;
+    markerData.push(...markers);
+    if (markers.length) {
+      candleSeries.setMarkers(markers.sort((a, b) => a.time - b.time));
+    }
+
+    // Render reasoning log
+    renderReasoningLog(transitions);
+  } catch (e) {
+    console.error('Transitions error:', e);
+  }
+}
+
+function renderReasoningLog(transitions) {
+  const list = document.getElementById('reasoning-list');
+  const reversed = [...transitions].reverse().slice(0, 50);
+
+  if (!reversed.length) {
+    list.innerHTML = '<div class="empty-state">Waiting for transitions...</div>';
+    return;
+  }
+
+  list.innerHTML = reversed.map(t => {
+    const action = t.action ?? {};
+    const metrics = t.metrics ?? {};
+    const meta = t.metadata ?? {};
+    const execResult = t.execution_result ?? {};
+
+    const actionType = (action.type ?? 'HOLD').toUpperCase();
+    let actionClass = 'hold';
+    if (actionType.includes('LONG')) actionClass = 'long';
+    else if (actionType.includes('SHORT')) actionClass = 'short';
+    else if (actionType.includes('CLOSE')) actionClass = 'close';
+
+    const ts = t.timestamp ? new Date(t.timestamp * 1000).toLocaleTimeString() : '--';
+    const reasoning = meta.reasoning ?? meta.rationale ?? execResult.message ?? actionType;
+    const priceBefore = metrics.market_price_before;
+    const eqDelta = metrics.equity_delta;
+    const balDelta = metrics.balance_delta;
+
+    return `
+      <div class="reasoning-entry">
+        <div class="reasoning-meta">
+          <span class="reasoning-action ${actionClass}">${actionType.replace('_', ' ')}</span>
+          <span class="reasoning-time">${ts}</span>
+        </div>
+        ${reasoning !== actionType ? `<div class="reasoning-text">${escHtml(String(reasoning).slice(0, 300))}</div>` : ''}
+        <div class="reasoning-metrics">
+          ${priceBefore != null ? `<span>Price <span class="val">${fmt(priceBefore)}</span></span>` : ''}
+          ${eqDelta != null ? `<span>Equity <span class="val ${eqDelta >= 0 ? 'pos' : 'neg'}">${eqDelta >= 0 ? '+' : ''}${fmt(eqDelta)}</span></span>` : ''}
+          ${balDelta != null && balDelta !== 0 ? `<span>P&L <span class="val ${balDelta >= 0 ? 'pos' : 'neg'}">${balDelta >= 0 ? '+' : ''}${fmt(balDelta)}</span></span>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// --- Helpers ---
+function fmt(n) {
+  if (n == null) return '--';
+  const num = Number(n);
+  if (isNaN(num)) return String(n);
+  if (Math.abs(num) >= 1000) return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (Math.abs(num) >= 1) return num.toFixed(2);
+  return num.toPrecision(4);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// --- Init ---
+async function init() {
+  await loadConfig();
+  await Promise.all([loadKlines(), loadCompetition(), loadAccount(), loadPosition(), loadTransitions()]);
+  handleResize();
+}
+
+async function refresh() {
+  await Promise.all([loadKlines(), loadAccount(), loadPosition(), loadTransitions()]);
+}
+
+init();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
