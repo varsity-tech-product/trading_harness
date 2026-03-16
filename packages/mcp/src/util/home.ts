@@ -14,6 +14,7 @@ export type ManagedAgent =
   | "rule"
   | "claude"
   | "gemini"
+  | "openclaw"
   | "codex";
 
 export interface ArenaHomeState {

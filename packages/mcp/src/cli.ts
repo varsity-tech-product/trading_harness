@@ -25,7 +25,11 @@ import { serve } from "./index.js";
 import { findArenaRoot, findPython } from "./util/paths.js";
 import { checkPythonEnvironment } from "./setup/detect-python.js";
 import { CLIENT_SETUP } from "./setup/client-configs.js";
-import { bootstrapPythonRuntime, commandAvailable } from "./setup/bootstrap-python.js";
+import {
+  bootstrapPythonRuntime,
+  commandAvailable,
+  probeCliCommand,
+} from "./setup/bootstrap-python.js";
 import { buildChildEnv, loadEnvFile } from "./util/env.js";
 import {
   DEFAULT_MONITOR_PORT,
@@ -141,6 +145,11 @@ async function main(): Promise<void> {
     process.exit(code);
   }
 
+  if (command === "upgrade") {
+    await runUpgrade();
+    return;
+  }
+
   if (command === "status") {
     runStatus();
     return;
@@ -174,7 +183,7 @@ async function initManagedHome(): Promise<void> {
   let liveTrading =
     parseTradingMode(optionValue("--mode")) ??
     existingState?.liveTrading ??
-    true;
+    false;
   const pythonInstallSource =
     optionValue("--python-source") ??
     existingState?.pythonInstallSource ??
@@ -190,7 +199,7 @@ async function initManagedHome(): Promise<void> {
       }
       agent = (await promptValue(
         rl,
-        `Default agent backend [auto/rule/claude/gemini/codex]`,
+        `Default agent backend [auto/rule/claude/gemini/openclaw/codex]`,
         agent
       )) as ManagedAgent;
       model = await promptValue(
@@ -204,9 +213,16 @@ async function initManagedHome(): Promise<void> {
         liveTrading ? "live" : "dry-run"
       );
       liveTrading = modeAnswer.trim().toLowerCase() !== "dry-run";
+      if (liveTrading) {
+        await confirmLiveTrading(rl);
+      }
     } finally {
       rl.close();
     }
+  } else if (liveTrading && !hasFlag("--yes-live")) {
+    throw new Error(
+      "Live trading requires explicit confirmation. Re-run init with --yes-live or choose --mode dry-run."
+    );
   }
 
   if (!apiKey.trim()) {
@@ -214,7 +230,7 @@ async function initManagedHome(): Promise<void> {
   }
   if (!isManagedAgent(agent)) {
     throw new Error(
-      "Invalid agent backend. Use one of: auto, rule, claude, gemini, codex."
+      "Invalid agent backend. Use one of: auto, rule, claude, gemini, openclaw, codex."
     );
   }
   validateAgentAvailability(agent, availableCliBackends);
@@ -321,6 +337,11 @@ async function runUp(): Promise<number> {
   const agent = (optionValue("--agent") ?? state.defaultAgent) as ManagedAgent;
   const model = optionValue("--model") ?? state.defaultModel ?? undefined;
   validateAgentAvailability(agent, detectInstalledCliBackends());
+  if (state.liveTrading) {
+    console.log("LIVE trading is enabled for this Arena home.");
+  } else {
+    console.log("Dry-run mode is enabled for this Arena home.");
+  }
 
   const configPath = resolveUserConfigPath(
     home,
@@ -540,6 +561,9 @@ function detectInstalledCliBackends(): ManagedAgent[] {
   if (commandAvailable("gemini")) {
     installed.push("gemini");
   }
+  if (commandAvailable("openclaw")) {
+    installed.push("openclaw");
+  }
   if (commandAvailable("codex")) {
     installed.push("codex");
   }
@@ -554,9 +578,16 @@ function describeBackendStatus(agent: ManagedAgent): string {
     const available = detectInstalledCliBackends();
     return available.length > 0
       ? `ok (${available.join(", ")})`
-      : "missing (no claude/gemini/codex CLI found)";
+      : "missing (no claude/gemini/openclaw/codex CLI found)";
   }
-  return commandAvailable(agent) ? `ok (${agent})` : `missing (${agent})`;
+  const probe = probeCliCommand(agent);
+  if (!probe.available) {
+    return `missing (${agent})`;
+  }
+  if (!probe.runnable) {
+    return `degraded (${probe.detail})`;
+  }
+  return `ok (${probe.detail})`;
 }
 
 function validateAgentAvailability(
@@ -571,7 +602,7 @@ function validateAgentAvailability(
   }
   if (agent === "auto") {
     throw new Error(
-      "No CLI backend found in PATH for auto mode. Install claude, gemini, or codex, or use --agent rule."
+      "No CLI backend found in PATH for auto mode. Install claude, gemini, openclaw, or codex, or use --agent rule."
     );
   }
   if (!commandAvailable(agent)) {
@@ -610,14 +641,17 @@ function printUsage(invocation: string): void {
   console.log("  doctor                   Check managed home, Python, deps, and backend CLI");
   console.log("  up                       Start trading runtime and open the TUI monitor");
   console.log("  monitor                  Attach to the TUI monitor only");
+  console.log("  upgrade                  Reinstall or refresh the managed Python runtime");
   console.log("  status                   Show runtime pid, config, and monitor port");
   console.log("  down                     Stop the background runtime");
   console.log("  logs                     Print recent runtime logs");
   console.log("");
   console.log("Examples:");
   console.log("  arena-agent init");
+  console.log("  arena-agent init --agent openclaw --mode dry-run");
   console.log("  arena-agent up --agent gemini");
   console.log("  arena-agent up --no-monitor --daemon");
+  console.log("  arena-agent upgrade");
   console.log("  arena-mcp setup --client claude-code");
 }
 
@@ -658,7 +692,7 @@ function parseTradingMode(
 }
 
 function isManagedAgent(value: string): value is ManagedAgent {
-  return ["auto", "rule", "claude", "gemini", "codex"].includes(value);
+  return ["auto", "rule", "claude", "gemini", "openclaw", "codex"].includes(value);
 }
 
 async function promptValue(
@@ -689,6 +723,39 @@ function waitForExit(child: ChildProcess): Promise<number> {
       resolvePromise(code ?? 0);
     });
   });
+}
+
+async function runUpgrade(): Promise<void> {
+  const home = resolveConfiguredHome(optionValue("--home"));
+  const state = readArenaHomeState(home);
+  if (!state) {
+    throw new Error(`Arena home is not initialized at ${home}. Run \`arena-agent init\` first.`);
+  }
+
+  const pythonInstallSource =
+    optionValue("--python-source") ?? state.pythonInstallSource;
+  console.log(`Upgrading managed runtime in ${home}`);
+  bootstrapPythonRuntime({
+    home,
+    pythonInstallSource,
+    reinstall: true,
+    installMonitor: true,
+    installMcp: true,
+  });
+  console.log("Managed runtime upgraded.");
+}
+
+async function confirmLiveTrading(
+  rl: ReturnType<typeof createInterface>
+): Promise<void> {
+  console.log("");
+  console.log("Live trading will send real orders from this machine.");
+  const answer = (
+    await rl.question("Type LIVE to confirm: ")
+  ).trim();
+  if (answer !== "LIVE") {
+    throw new Error("Live trading confirmation was not provided.");
+  }
 }
 
 function runStatus(): void {

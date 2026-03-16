@@ -61,6 +61,30 @@ class RunCLITest(unittest.TestCase):
         self.assertEqual(updated.policy["type"], "agent_exec")
         self.assertEqual(updated.policy["backend"], "codex")
 
+    def test_agent_openclaw_sets_openclaw_backend(self) -> None:
+        config = RuntimeConfig.from_mapping(
+            {
+                "competition_id": 4,
+                "symbol": "BTCUSDT",
+            }
+        )
+        args = type(
+            "Args",
+            (),
+            {
+                "agent": "openclaw",
+                "model": None,
+                "timeout_seconds": 45.0,
+                "recent_transitions": 5,
+                "extra_instructions": "",
+                "strategy_context": "",
+            },
+        )()
+
+        updated = _apply_agent_override(config, args)
+        self.assertEqual(updated.policy["type"], "agent_exec")
+        self.assertEqual(updated.policy["backend"], "openclaw")
+
     def test_agent_auto_sets_auto_backend(self) -> None:
         config = RuntimeConfig.from_mapping(
             {

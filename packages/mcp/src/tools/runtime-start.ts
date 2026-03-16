@@ -16,7 +16,7 @@ export const inputSchema = z.object({
     .optional()
     .describe("Path to runtime YAML config."),
   agent: z
-    .enum(["config", "rule", "claude", "gemini", "codex", "auto", "tap"])
+    .enum(["config", "rule", "claude", "gemini", "openclaw", "codex", "auto", "tap"])
     .optional()
     .default("auto")
     .describe("Agent type."),

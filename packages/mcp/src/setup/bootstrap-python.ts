@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { localPythonSourcePath } from "../util/home.js";
 
 export interface BootstrapOptions {
@@ -52,19 +53,32 @@ export function bootstrapPythonRuntime(options: BootstrapOptions): string {
     execFileSync(pythonBin, args, { stdio: "inherit" });
   }
 
-  execFileSync(
-    venvPython,
-    ["-m", "pip", "install", "--upgrade", "pip"],
-    { stdio: "inherit" }
-  );
+  try {
+    execFileSync(
+      venvPython,
+      ["-m", "pip", "install", "--upgrade", "pip"],
+      { stdio: "inherit" }
+    );
+  } catch {
+    // Keep bootstrap moving even when pip upgrade is unavailable offline.
+  }
 
   const installSource = resolveInstallSource(options.pythonInstallSource);
-  const installArgs = ["-m", "pip", "install"];
-  if (options.reinstall) {
-    installArgs.push("--force-reinstall");
+  if (existsSync(installSource)) {
+    installLocalSource({
+      venvPython,
+      sourcePath: installSource,
+      forceReinstall: options.reinstall ?? false,
+      fallbackBuilderPython: pythonBin,
+    });
+  } else {
+    const installArgs = ["-m", "pip", "install"];
+    if (options.reinstall) {
+      installArgs.push("--force-reinstall");
+    }
+    installArgs.push(installSource);
+    execFileSync(venvPython, installArgs, { stdio: "inherit" });
   }
-  installArgs.push(installSource);
-  execFileSync(venvPython, installArgs, { stdio: "inherit" });
 
   const extraPackages: string[] = [];
   if (options.installMcp ?? true) {
@@ -95,8 +109,126 @@ export function resolveInstallSource(source: string): string {
   return source;
 }
 
+function installLocalSource(options: {
+  venvPython: string;
+  sourcePath: string;
+  forceReinstall: boolean;
+  fallbackBuilderPython: string;
+}): void {
+  const tempDir = mkdtempSync(join(tmpdir(), "arena-agent-wheel-"));
+  try {
+    const builderPython = resolveBuilderPython(
+      options.sourcePath,
+      options.fallbackBuilderPython
+    );
+    execFileSync(
+      builderPython,
+      [
+        "-m",
+        "pip",
+        "wheel",
+        options.sourcePath,
+        "--wheel-dir",
+        tempDir,
+        "--no-deps",
+        "--no-build-isolation",
+      ],
+      { stdio: "inherit", cwd: options.sourcePath }
+    );
+
+    const wheelName = readdirSync(tempDir).find((name) => name.endsWith(".whl"));
+    if (!wheelName) {
+      throw new Error("No wheel was produced from the local Python source.");
+    }
+
+    const installArgs = ["-m", "pip", "install"];
+    if (options.forceReinstall) {
+      installArgs.push("--force-reinstall");
+    }
+    if (runtimeDepsInstalled(options.venvPython)) {
+      installArgs.push("--no-deps");
+    }
+    installArgs.push(resolve(tempDir, wheelName));
+    execFileSync(options.venvPython, installArgs, { stdio: "inherit" });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function resolveBuilderPython(sourcePath: string, fallbackPython: string): string {
+  const candidates = [
+    resolve(sourcePath, ".venv", "bin", "python"),
+    resolve(sourcePath, ".venv", "bin", "python3"),
+    resolve(sourcePath, ".venv", "Scripts", "python.exe"),
+    fallbackPython,
+  ];
+  for (const candidate of candidates) {
+    if (candidate === fallbackPython && builderPythonReady(candidate)) {
+      return candidate;
+    }
+    if (existsSync(candidate) && builderPythonReady(candidate)) {
+      return candidate;
+    }
+  }
+  return fallbackPython;
+}
+
+function builderPythonReady(python: string): boolean {
+  const result = spawnSync(
+    python,
+    ["-c", "import setuptools.build_meta"],
+    { stdio: "ignore" }
+  );
+  return result.status === 0;
+}
+
+function runtimeDepsInstalled(python: string): boolean {
+  const result = spawnSync(
+    python,
+    ["-c", "import requests, yaml"],
+    { stdio: "ignore" }
+  );
+  return result.status === 0;
+}
+
 export function commandAvailable(command: string): boolean {
   const locator = process.platform === "win32" ? "where" : "which";
   const result = spawnSync(locator, [command], { stdio: "ignore" });
   return result.status === 0;
+}
+
+export interface CommandProbe {
+  available: boolean;
+  runnable: boolean;
+  detail: string;
+}
+
+export function probeCliCommand(command: string): CommandProbe {
+  if (!commandAvailable(command)) {
+    return {
+      available: false,
+      runnable: false,
+      detail: `${command} not found in PATH`,
+    };
+  }
+
+  for (const args of [["--version"], ["--help"]]) {
+    const result = spawnSync(command, args, {
+      stdio: "pipe",
+      timeout: 5000,
+    });
+    if (result.status === 0) {
+      return {
+        available: true,
+        runnable: true,
+        detail: `${command} responds to ${args.join(" ")}`,
+      };
+    }
+  }
+
+  return {
+    available: true,
+    runnable: false,
+    detail: `${command} exists but did not respond cleanly to --version/--help`,
+  };
 }

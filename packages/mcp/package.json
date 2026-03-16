@@ -1,7 +1,7 @@
 {
-  "name": "@arena/trade-mcp",
+  "name": "@arena/trade-agent",
   "version": "0.1.0",
-  "description": "MCP server for Arena trading agent runtime — use Claude Code or any MCP client to trade on Varsity Arena",
+  "description": "Arena trading agent runtime with managed install, TUI monitoring, and MCP support",
   "type": "module",
   "bin": {
     "arena-mcp": "./dist/cli.js",
@@ -38,6 +38,8 @@
     "varsity",
     "claude",
     "gemini",
+    "openclaw",
+    "codex",
     "agent",
     "tui"
   ],

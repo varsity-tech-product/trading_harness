@@ -1,4 +1,4 @@
-# @arena/trade-mcp
+# @arena/trade-agent
 
 Single-package install for the Arena trading agent runtime.
 
@@ -16,7 +16,7 @@ This package exposes two CLIs:
 ### End-user workflow
 
 ```bash
-npm install -g @arena/trade-mcp
+npm install -g @arena/trade-agent
 
 # One-time setup
 arena-agent init
@@ -29,6 +29,7 @@ Useful follow-ups:
 
 ```bash
 arena-agent doctor
+arena-agent upgrade
 arena-agent monitor
 arena-agent status
 arena-agent down
@@ -38,7 +39,7 @@ arena-agent logs
 ### MCP workflow
 
 ```bash
-npm install -g @arena/trade-mcp
+npm install -g @arena/trade-agent
 
 # Bootstrap the managed home if needed
 arena-agent init
@@ -89,9 +90,12 @@ The Node.js layer handles bootstrap, lifecycle, and MCP wiring. All trading logi
 - For agent-exec mode, at least one supported CLI backend installed and authenticated:
   - `claude`
   - `gemini`
+  - `openclaw`
   - `codex`
 
 `arena-agent init` creates a managed home at `~/.arena-agent`, installs the Python runtime into `~/.arena-agent/.venv`, writes `.env.runtime.local`, and creates starter configs under `~/.arena-agent/config/`.
+
+`arena-agent init` defaults to `dry-run`. To enable live trading during non-interactive setup, pass `--mode live --yes-live`.
 
 `arena-agent up` starts trading and opens the TUI by default. For background mode:
 
