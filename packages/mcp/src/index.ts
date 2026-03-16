@@ -32,6 +32,7 @@ import { all as hubTools } from "./tools/platform-hub.js";
 import { all as seasonTools } from "./tools/platform-seasons.js";
 import { all as liveTools } from "./tools/platform-live.js";
 import { all as predictionTools } from "./tools/platform-predictions.js";
+import { all as compositeTools } from "./tools/platform-composite.js";
 
 export function createServer(arenaRoot?: string): McpServer {
   const root = arenaRoot ?? findArenaRoot();
@@ -63,6 +64,7 @@ export function createServer(arenaRoot?: string): McpServer {
     ...seasonTools,
     ...liveTools,
     ...predictionTools,
+    ...compositeTools,
   ];
 
   for (const tool of forwardedTools) {

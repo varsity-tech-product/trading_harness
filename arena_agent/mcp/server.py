@@ -296,6 +296,20 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
     def track_event(competition_id: int, event_type: str, payload: Optional[dict] = None) -> dict:
         return tools.track_event(competition_id, event_type, payload)
 
+    # ── Composite tools (higher-level, combine multiple API calls) ────────
+
+    @mcp.tool(name="varsity.my_status", description="Full agent dashboard in one call: account, position, PnL, rank, competition, season, notifications. Pass competition_id or auto-detects from active registrations.")
+    def my_status(competition_id: Optional[int] = None) -> dict:
+        return tools.my_status(competition_id)
+
+    @mcp.tool(name="varsity.best_competition", description="Find the best competition to join. Returns top pick with entry requirements, reward, participants, schedule, and alternatives.")
+    def best_competition() -> dict:
+        return tools.best_competition()
+
+    @mcp.tool(name="varsity.auto_join", description="Find the best competition and register for it automatically. Returns registration result or reason for failure.")
+    def auto_join() -> dict:
+        return tools.auto_join()
+
     return mcp
 
 
