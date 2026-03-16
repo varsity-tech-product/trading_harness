@@ -3,5 +3,9 @@
 .claude/scheduled_tasks.lock
 __pycache__/
 *.pyc
+*.egg-info/
+build/
 artifacts/
 bot_output.log
+packages/mcp/dist/
+packages/mcp/node_modules/
