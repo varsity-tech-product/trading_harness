@@ -16,6 +16,7 @@ from arena_agent.runtime_env import load_local_runtime_env, require_runtime_envi
 # --agent values that map to the agent_exec policy and their backend.
 _AGENT_EXEC_BACKENDS = {
     "claude": "claude",
+    "gemini": "gemini",
     "codex": "codex",
     "auto": "auto",
 }
@@ -39,9 +40,9 @@ def _run_runtime(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(description="Run an Arena trading agent runtime.")
     parser.add_argument(
         "--agent",
-        choices=["config", "rule", "tap", "claude", "codex", "auto"],
+        choices=["config", "rule", "tap", "claude", "gemini", "codex", "auto"],
         default="config",
-        help="Policy to run. 'claude' uses Claude Code, 'codex' uses Codex CLI, "
+        help="Policy to run. 'claude' uses Claude Code, 'gemini' uses Gemini CLI, 'codex' uses Codex CLI, "
         "'auto' detects which is available. 'tap' uses an external HTTP endpoint. "
         "'config' keeps the YAML policy unchanged.",
     )

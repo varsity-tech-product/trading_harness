@@ -142,10 +142,14 @@ class ResolveBackendTest(unittest.TestCase):
     def test_explicit_claude(self) -> None:
         self.assertEqual(resolve_backend("claude", None), "claude")
 
+    def test_explicit_gemini(self) -> None:
+        self.assertEqual(resolve_backend("gemini", None), "gemini")
+
     def test_auto_infers_from_command_name(self) -> None:
         self.assertEqual(resolve_backend("auto", "/usr/local/bin/claude"), "claude")
         self.assertEqual(resolve_backend("auto", "codex"), "codex")
         self.assertEqual(resolve_backend("auto", "/opt/bin/claude-code"), "claude")
+        self.assertEqual(resolve_backend("auto", "/usr/bin/gemini"), "gemini")
 
     def test_invalid_backend_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -363,6 +367,66 @@ class ClaudeBackendTest(unittest.TestCase):
         self.assertEqual(captured["command"][idx + 1], "json")
 
 
+class GeminiBackendTest(unittest.TestCase):
+    def test_gemini_parses_structured_action(self) -> None:
+        captured = {}
+
+        def runner(command, **kwargs):
+            captured["command"] = command
+            captured["input"] = kwargs["input"]
+            # Gemini --output-format json wraps in {"response": "...", ...}
+            stdout = json.dumps({
+                "session_id": "test-session",
+                "response": json.dumps(DECISION_PAYLOAD),
+                "stats": {},
+            })
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        policy = AgentExecPolicy(
+            backend="gemini",
+            model="gemini-2.5-pro",
+            subprocess_runner=runner,
+            cwd="/tmp",
+        )
+
+        result = policy.decide(make_state())
+
+        self.assertEqual(result.type, ActionType.OPEN_LONG)
+        self.assertAlmostEqual(result.size or 0.0, 0.01)
+        self.assertEqual(result.metadata["source"], "gemini_exec")
+        self.assertEqual(result.metadata["cli_backend"], "gemini")
+        self.assertEqual(result.metadata["cli_model"], "gemini-2.5-pro")
+        # Gemini uses -p "" and --sandbox, not --output-schema or --json-schema
+        self.assertIn("-p", captured["command"])
+        self.assertIn("--sandbox", captured["command"])
+        self.assertIn("--output-format", captured["command"])
+        self.assertNotIn("--json-schema", captured["command"])
+        self.assertNotIn("--output-schema", captured["command"])
+        # Model passed with -m
+        self.assertIn("-m", captured["command"])
+        self.assertIn("gemini-2.5-pro", captured["command"])
+
+    def test_gemini_handles_markdown_fences(self) -> None:
+        fenced = '```json\n' + json.dumps(DECISION_PAYLOAD) + '\n```'
+
+        def runner(command, **kwargs):
+            stdout = json.dumps({"response": fenced, "session_id": "x"})
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        policy = AgentExecPolicy(backend="gemini", subprocess_runner=runner, cwd="/tmp")
+        result = policy.decide(make_state())
+        self.assertEqual(result.type, ActionType.OPEN_LONG)
+
+    def test_gemini_fails_open_to_hold(self) -> None:
+        def runner(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="auth error")
+
+        policy = AgentExecPolicy(backend="gemini", subprocess_runner=runner, fail_open_to_hold=True)
+        result = policy.decide(make_state())
+        self.assertEqual(result.type, ActionType.HOLD)
+        self.assertIn("cli_error", result.metadata["reason"])
+
+
 class PolicyFactoryTest(unittest.TestCase):
     def test_factory_builds_codex_policy_default(self) -> None:
         runtime_config = RuntimeConfig.from_mapping(
@@ -408,6 +472,29 @@ class PolicyFactoryTest(unittest.TestCase):
         self.assertEqual(policy._resolved_backend, "claude")
         self.assertEqual(policy.model, "sonnet")
         self.assertEqual(policy.command, "claude")
+
+
+    def test_factory_builds_gemini_policy(self) -> None:
+        runtime_config = RuntimeConfig.from_mapping(
+            {
+                "competition_id": 4,
+                "symbol": "BTCUSDT",
+                "storage": {"transition_path": "/tmp/transitions.jsonl"},
+                "policy": {
+                    "type": "agent_exec",
+                    "backend": "gemini",
+                    "model": "gemini-2.5-pro",
+                    "timeout_seconds": 25,
+                },
+            }
+        )
+
+        policy = build_policy(runtime_config.policy, runtime_config=runtime_config)
+
+        self.assertIsInstance(policy, AgentExecPolicy)
+        self.assertEqual(policy._resolved_backend, "gemini")
+        self.assertEqual(policy.model, "gemini-2.5-pro")
+        self.assertEqual(policy.command, "gemini")
 
 
 if __name__ == "__main__":

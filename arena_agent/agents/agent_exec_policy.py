@@ -23,7 +23,7 @@ from arena_agent.tap.protocol import parse_decision_response
 DEFAULT_SCHEMA_PATH = Path(__file__).with_name("action_schema.json")
 DEFAULT_PROMPT_TEMPLATE_PATH = Path(__file__).with_name("prompt_template.md")
 
-VALID_BACKENDS = ("auto", "codex", "claude")
+VALID_BACKENDS = ("auto", "codex", "claude", "gemini")
 
 _FENCE_RE_PATTERN = None
 
@@ -42,24 +42,29 @@ def _strip_markdown_fences(text: str) -> str:
 def resolve_backend(backend: str, command: str | None) -> str:
     """Determine which CLI backend to use.
 
-    Returns ``"codex"`` or ``"claude"``.
+    Returns ``"claude"``, ``"gemini"``, or ``"codex"``.
     """
-    if backend == "codex":
-        return "codex"
-    if backend == "claude":
-        return "claude"
+    if backend in ("codex", "claude", "gemini"):
+        return backend
     if backend != "auto":
         raise ValueError(f"Invalid backend {backend!r}. Must be one of {VALID_BACKENDS}.")
     # If command is explicitly set, infer from its name.
     if command is not None:
-        return "claude" if "claude" in Path(command).name else "codex"
-    # Auto-detect from PATH – prefer claude.
+        cmd_name = Path(command).name
+        if "claude" in cmd_name:
+            return "claude"
+        if "gemini" in cmd_name:
+            return "gemini"
+        return "codex"
+    # Auto-detect from PATH – prefer claude > gemini > codex.
     if shutil.which("claude"):
         return "claude"
+    if shutil.which("gemini"):
+        return "gemini"
     if shutil.which("codex"):
         return "codex"
     raise RuntimeError(
-        "Neither 'claude' nor 'codex' CLI found in PATH. "
+        "No supported CLI found in PATH (claude, gemini, codex). "
         "Install one or set backend/command explicitly in the policy config."
     )
 
@@ -185,6 +190,8 @@ class AgentExecPolicy(Policy):
         """Dispatch to the resolved backend."""
         if self._resolved_backend == "claude":
             return self._run_claude(prompt)
+        if self._resolved_backend == "gemini":
+            return self._run_gemini(prompt)
         return self._run_codex(prompt)
 
     def _run_codex(self, prompt: str) -> dict[str, Any]:
@@ -283,6 +290,54 @@ class AgentExecPolicy(Policy):
             raise ValueError(f"claude result is not valid JSON: {result_text[:500]}") from exc
         if not isinstance(payload, dict):
             raise ValueError(f"claude payload must be an object, got: {payload!r}")
+        return payload
+
+    def _run_gemini(self, prompt: str) -> dict[str, Any]:
+        command = [
+            self.command,
+            "-p", "",  # non-interactive; prompt appended from stdin
+            "--output-format", "json",
+            "--sandbox",
+        ]
+        if self.model:
+            command.extend(["-m", self.model])
+
+        decision_cwd = self.cwd or tempfile.gettempdir()
+        result = self.subprocess_runner(
+            command,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            cwd=decision_cwd,
+            timeout=self.timeout_seconds,
+            check=False,
+        )
+        if result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"gemini failed with code={result.returncode}: {stderr[:500]}")
+        raw_output = (result.stdout or "").strip()
+        if not raw_output:
+            raise RuntimeError("gemini returned empty output")
+
+        # --output-format json wraps the response: {"response": "...", "session_id": ..., "stats": ...}
+        try:
+            wrapper = json.loads(raw_output)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"gemini returned invalid JSON: {raw_output[:500]}") from exc
+
+        if isinstance(wrapper, dict) and "response" in wrapper:
+            result_text = str(wrapper["response"]).strip()
+        else:
+            result_text = raw_output
+
+        result_text = _strip_markdown_fences(result_text)
+
+        try:
+            payload = json.loads(result_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"gemini result is not valid JSON: {result_text[:500]}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"gemini payload must be an object, got: {payload!r}")
         return payload
 
     def _load_recent_transition_summaries(self) -> list[dict[str, Any]]:
