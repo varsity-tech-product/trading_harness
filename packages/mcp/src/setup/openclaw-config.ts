@@ -68,10 +68,11 @@ export function mergeArenaMcpServer(
   if (!config.acp) config.acp = {};
   config.acp.backend = "acpx";
 
-  // Ensure plugins.entries.acpx.config.mcpServers path exists
+  // Ensure plugins.entries.acpx is enabled with mcpServers path
   if (!config.plugins) config.plugins = {};
   if (!config.plugins.entries) config.plugins.entries = {};
   if (!config.plugins.entries.acpx) config.plugins.entries.acpx = {};
+  (config.plugins.entries.acpx as Record<string, unknown>).enabled = true;
   if (!config.plugins.entries.acpx.config) config.plugins.entries.acpx.config = {};
   if (!config.plugins.entries.acpx.config.mcpServers) {
     config.plugins.entries.acpx.config.mcpServers = {};
@@ -170,6 +171,18 @@ export function diagnoseOpenClaw(
         display.push(`ACP backend:       ${acpBackend ?? "not set"}`);
         errors.push(
           `ACP backend is not 'acpx'. Run: arena-agent setup --client openclaw --mode mcp`
+        );
+      }
+
+      const acpxEnabled =
+        (config.plugins?.entries?.acpx as Record<string, unknown> | undefined)
+          ?.enabled === true;
+      if (acpxEnabled) {
+        display.push(`ACPX plugin:       enabled (ok)`);
+      } else {
+        display.push(`ACPX plugin:       disabled`);
+        errors.push(
+          `ACPX plugin is not enabled. Run: arena-agent setup --client openclaw --mode mcp`
         );
       }
 

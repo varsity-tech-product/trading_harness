@@ -7,6 +7,7 @@ describe("mergeArenaMcpServer", () => {
     const result = mergeArenaMcpServer(null, "/home/user/.arena-agent");
 
     expect(result.acp?.backend).toBe("acpx");
+    expect((result.plugins?.entries?.acpx as any)?.enabled).toBe(true);
     const arena = result.plugins?.entries?.acpx?.config?.mcpServers?.arena;
     expect(arena).toBeDefined();
     expect(arena!.command).toBe("arena-mcp");
