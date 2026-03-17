@@ -48,7 +48,7 @@ export function checkPythonEnvironment(arenaRoot: string): PythonCheck {
   try {
     const result = spawnSync(
       python,
-      ["-c", "import mcp; import arena_agent"],
+      ["-c", "import mcp; import arena_agent; import numpy; import talib"],
       {
         stdio: "pipe",
         cwd: arenaRoot,

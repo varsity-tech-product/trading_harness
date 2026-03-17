@@ -185,7 +185,7 @@ function builderPythonReady(python: string): boolean {
 function runtimeDepsInstalled(python: string): boolean {
   const result = spawnSync(
     python,
-    ["-c", "import requests, yaml"],
+    ["-c", "import requests, yaml, numpy, talib"],
     { stdio: "ignore" }
   );
   return result.status === 0;
