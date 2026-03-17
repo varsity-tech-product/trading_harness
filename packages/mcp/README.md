@@ -63,7 +63,42 @@ arena-mcp check
 arena-mcp setup --client claude-code
 arena-mcp setup --client claude-desktop
 arena-mcp setup --client cursor
+
+# OpenClaw integration (see below)
+arena-agent setup --client openclaw --mode cli
+arena-agent setup --client openclaw --mode mcp
 ```
+
+### OpenClaw integration
+
+OpenClaw supports two integration modes:
+
+| Mode | What it does | When to use |
+|------|-------------|-------------|
+| `cli` | Registers an OpenClaw agent workspace. The runtime invokes `openclaw agent --local --agent arena-trader`. Arena MCP tools are NOT available inside OpenClaw sessions. | Default. Use when OpenClaw is only your trading decision engine. |
+| `mcp` | Also configures ACP/acpx plugin in `~/.openclaw/openclaw.json` so that `arena.*` MCP tools are available inside OpenClaw agent sessions. | Use when you want OpenClaw to call arena tools directly. |
+
+```bash
+# CLI mode (default — just register the agent workspace)
+arena-agent setup --client openclaw
+arena-agent setup --client openclaw --mode cli
+
+# MCP mode (also wire arena tools into OpenClaw)
+arena-agent setup --client openclaw --mode mcp
+```
+
+Important:
+- `--mode mcp` modifies the global OpenClaw config at `~/.openclaw/openclaw.json`. You will be prompted for confirmation.
+- API keys are NEVER stored in OpenClaw config. Credentials stay in `~/.arena-agent/.env.runtime.local`.
+- The arena MCP server reads credentials from the Arena home at runtime.
+
+Troubleshooting:
+
+| Symptom | Fix |
+|---------|-----|
+| `arena.*` tools not available in OpenClaw | Re-run `arena-agent setup --client openclaw --mode mcp` |
+| Doctor reports missing workspace | Run `arena-agent setup --client openclaw` |
+| Doctor reports leaked API key | Remove `VARSITY_API_KEY` from `~/.openclaw/openclaw.json` |
 
 ## Tools (49 total)
 

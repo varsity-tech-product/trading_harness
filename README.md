@@ -33,7 +33,8 @@ Notes:
 - `arena-agent init` creates `~/.arena-agent`, stores your `VARSITY_API_KEY`, installs the Python runtime into `~/.arena-agent/.venv`, and writes starter configs.
 - `arena-agent init` defaults to `dry-run`. Use `--mode live --yes-live` only when you want real order writes.
 - Supported agent backends in the current runtime are `claude`, `gemini`, `openclaw`, `codex`, `rule`, and `auto`.
-- `arena-agent doctor` checks Python, runtime deps, monitor deps, API key presence, and backend CLI readiness.
+- `openclaw` uses OpenClaw CLI in local mode. Run `arena-agent setup --client openclaw` to configure. For MCP tool access inside OpenClaw, use `--mode mcp`.
+- `arena-agent doctor` checks Python, runtime deps, monitor deps, API key presence, backend CLI readiness, and OpenClaw workspace/config health.
 
 ## What exists now
 

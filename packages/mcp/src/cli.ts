@@ -29,6 +29,8 @@ import { checkPythonEnvironment } from "./setup/detect-python.js";
 import { CLIENT_SETUP } from "./setup/client-configs.js";
 import { ensureOpenClawTradingAgent } from "./setup/openclaw-agent.js";
 import { probeBackend } from "./setup/backend-probe.js";
+import { diagnoseOpenClaw } from "./setup/openclaw-config.js";
+import type { OpenClawMode } from "./setup/openclaw-config.js";
 import {
   bootstrapPythonRuntime,
   commandAvailable,
@@ -104,6 +106,28 @@ async function main(): Promise<void> {
     }
 
     const root = resolveConfiguredHome(optionValue("--home"));
+    const mode = optionValue("--mode") ?? (clientName === "openclaw" ? "cli" : undefined);
+
+    // OpenClaw MCP mode: warn about global config mutation and require confirmation
+    if (clientName === "openclaw" && mode === "mcp" && !hasFlag("--non-interactive")) {
+      const rl = createInterface({ input, output });
+      try {
+        console.log("");
+        console.log("WARNING: --mode mcp will modify the global OpenClaw config at");
+        console.log("  ~/.openclaw/openclaw.json");
+        console.log("This adds the arena MCP server to the ACP/acpx plugin.");
+        console.log("API keys are NOT stored in this config.");
+        console.log("");
+        const answer = (await rl.question("Continue? [y/N] ")).trim().toLowerCase();
+        if (answer !== "y" && answer !== "yes") {
+          console.log("Aborted.");
+          return;
+        }
+      } finally {
+        rl.close();
+      }
+    }
+
     console.log("Checking Python environment...");
     const check = checkPythonEnvironment(root);
     if (check.errors.length > 0) {
@@ -115,19 +139,41 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const configPath = setupFn(root);
+    const configPath = setupFn(root, mode ? { mode } : undefined);
+
+    // Save openclawMode to ArenaHomeState if applicable
+    if (clientName === "openclaw" && mode) {
+      const existingState = readArenaHomeState(root);
+      if (existingState) {
+        existingState.openclawMode = mode as OpenClawMode;
+        writeArenaHomeState(root, existingState);
+      }
+    }
+
     console.log(`\nConfigured ${clientName} at: ${configPath}`);
     console.log(`Arena home: ${root}`);
-    console.log("\nTools available (29 total):");
-    console.log("  Runtime:       market_state, competition_info, trade_action, last_transition");
-    console.log("  Market:        symbols, orderbook, klines, market_info");
-    console.log("  Competitions:  competitions, competition_detail, participants");
-    console.log("  Registration:  register, withdraw, my_registration");
-    console.log("  Leaderboards:  leaderboard, my_leaderboard_position, season_leaderboard");
-    console.log("  Profile:       my_profile, my_history, achievements, public_profile");
-    console.log("  Social:        chat_send, chat_history");
-    console.log("  Notifications: notifications, unread_count, mark_read");
-    console.log("  System:        health, runtime_start, runtime_stop");
+
+    if (clientName === "openclaw") {
+      if (mode === "mcp") {
+        console.log("\nOpenClaw ACP/acpx plugin configured with arena MCP server.");
+        console.log("The arena.* tools are now available in OpenClaw sessions.");
+      } else {
+        console.log("\nOpenClaw workspace and agent registered.");
+        console.log("Use: openclaw agent --local --agent arena-trader");
+        console.log("To also wire arena MCP tools into OpenClaw, re-run with --mode mcp.");
+      }
+    } else {
+      console.log("\nTools available (29 total):");
+      console.log("  Runtime:       market_state, competition_info, trade_action, last_transition");
+      console.log("  Market:        symbols, orderbook, klines, market_info");
+      console.log("  Competitions:  competitions, competition_detail, participants");
+      console.log("  Registration:  register, withdraw, my_registration");
+      console.log("  Leaderboards:  leaderboard, my_leaderboard_position, season_leaderboard");
+      console.log("  Profile:       my_profile, my_history, achievements, public_profile");
+      console.log("  Social:        chat_send, chat_history");
+      console.log("  Notifications: notifications, unread_count, mark_read");
+      console.log("  System:        health, runtime_start, runtime_stop");
+    }
     return;
   }
 
@@ -337,6 +383,18 @@ function runDoctor(): void {
     errors.push(`Arena home marker exists but is invalid: ${home}`);
   } else {
     errors.push(`Arena home is not initialized. Run: arena-agent init --home ${home}`);
+  }
+
+  // OpenClaw-specific diagnostics
+  if (
+    state?.defaultAgent === "openclaw" ||
+    (!state && commandAvailable("openclaw"))
+  ) {
+    const ocDiag = diagnoseOpenClaw(home, state ?? null);
+    for (const line of ocDiag.display) {
+      console.log(line);
+    }
+    errors.push(...ocDiag.errors);
   }
 
   if (pythonCheck.python) {
@@ -662,7 +720,7 @@ function printUsage(invocation: string): void {
   console.log("");
   console.log("Commands:");
   console.log("  serve                    Start MCP server on stdio");
-  console.log("  setup --client <name>    Configure an MCP client");
+  console.log("  setup --client <name>    Configure an MCP client (claude-code, claude-desktop, cursor, openclaw)");
   console.log("  check                    Validate Python environment");
   console.log("  init                     Bootstrap a managed Arena home");
   console.log("  doctor                   Check managed home, Python, deps, and backend CLI");
@@ -685,6 +743,8 @@ function printUsage(invocation: string): void {
   console.log("  arena-agent up --no-monitor --daemon");
   console.log("  arena-agent upgrade");
   console.log("  arena-mcp setup --client claude-code");
+  console.log("  arena-agent setup --client openclaw --mode cli");
+  console.log("  arena-agent setup --client openclaw --mode mcp");
   console.log("  arena-agent dashboard --competition 5 -d");
   console.log("  arena-agent competitions --status live");
   console.log("  arena-agent register 5");

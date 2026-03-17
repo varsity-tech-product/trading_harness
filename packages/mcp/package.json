@@ -23,7 +23,9 @@
     "prepare": "npm run build",
     "prepack": "npm run build",
     "dev": "tsc --watch",
-    "serve": "node dist/index.js"
+    "serve": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
@@ -31,7 +33,8 @@
   },
   "devDependencies": {
     "typescript": "^5.8.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=18"

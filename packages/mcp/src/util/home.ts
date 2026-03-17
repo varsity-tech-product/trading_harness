@@ -25,6 +25,7 @@ export interface ArenaHomeState {
   liveTrading: boolean;
   monitorPort: number;
   pythonInstallSource: string;
+  openclawMode?: "cli" | "mcp";
   profiles: {
     agentExec: string;
     rule: string;
@@ -122,9 +123,10 @@ export function createArenaHomeState(
     liveTrading: boolean;
     monitorPort?: number;
     pythonInstallSource?: string;
+    openclawMode?: "cli" | "mcp";
   }
 ): ArenaHomeState {
-  return {
+  const state: ArenaHomeState = {
     version: 1,
     createdAt: new Date().toISOString(),
     defaultAgent: options.defaultAgent,
@@ -138,6 +140,10 @@ export function createArenaHomeState(
       rule: profilePath(home, "rule"),
     },
   };
+  if (options.openclawMode) {
+    state.openclawMode = options.openclawMode;
+  }
+  return state;
 }
 
 export function writeArenaHomeState(home: string, state: ArenaHomeState): void {

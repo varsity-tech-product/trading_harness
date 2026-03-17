@@ -1,6 +1,13 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { homedir } from "node:os";
+import { ensureOpenClawTradingAgent } from "./openclaw-agent.js";
+import {
+  mergeArenaMcpServer,
+  readOpenClawGlobalConfig,
+  writeOpenClawGlobalConfig,
+  openclawGlobalConfigPath,
+} from "./openclaw-config.js";
 
 interface McpServerEntry {
   type?: string;
@@ -74,11 +81,30 @@ export function setupCursor(arenaRoot: string): string {
   return configPath;
 }
 
+export function setupOpenClaw(
+  arenaRoot: string,
+  options?: { mode?: string }
+): string {
+  const mode = options?.mode ?? "cli";
+
+  ensureOpenClawTradingAgent(arenaRoot);
+
+  if (mode === "mcp") {
+    const existing = readOpenClawGlobalConfig();
+    const merged = mergeArenaMcpServer(existing, arenaRoot);
+    writeOpenClawGlobalConfig(merged);
+    return openclawGlobalConfigPath();
+  }
+
+  return resolve(arenaRoot, "openclaw", "arena-trader");
+}
+
 export const CLIENT_SETUP: Record<
   string,
-  (root: string) => string
+  (root: string, options?: { mode?: string }) => string
 > = {
   "claude-code": setupClaudeCode,
   "claude-desktop": setupClaudeDesktop,
   cursor: setupCursor,
+  openclaw: setupOpenClaw,
 };
