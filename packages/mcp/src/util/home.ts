@@ -193,7 +193,7 @@ function renderAgentExecConfig(state: ArenaHomeState): string {
 competition_id: 4
 symbol: BTCUSDT
 interval: 1m
-tick_interval_seconds: 30
+tick_interval_seconds: 60
 kline_limit: 120
 orderbook_depth: 20
 max_iterations: null
@@ -208,7 +208,7 @@ policy:
   type: agent_exec
   backend: auto
   indicator_mode: full
-  timeout_seconds: 20
+  timeout_seconds: 120
   recent_transition_limit: 5
   fail_open_to_hold: true
   sandbox_mode: read-only
@@ -261,9 +261,9 @@ observability:
   max_logs: 50
   no_transition_threshold_seconds: 90
   no_transition_error_threshold_seconds: 180
-  max_decision_latency_seconds: 20
-  max_consecutive_runtime_errors: 3
-  supervisor_stop_on_error: true
+  max_decision_latency_seconds: 120
+  max_consecutive_runtime_errors: 10
+  supervisor_stop_on_error: false
 `;
 }
 
@@ -272,7 +272,7 @@ function renderRuleConfig(state: ArenaHomeState): string {
 competition_id: 4
 symbol: BTCUSDT
 interval: 1m
-tick_interval_seconds: 30
+tick_interval_seconds: 60
 kline_limit: 120
 orderbook_depth: 20
 max_iterations: null
