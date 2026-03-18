@@ -1,6 +1,6 @@
 {
   "name": "@varsity-arena/agent",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Full-platform Arena agent toolkit — 49 MCP tools, web dashboard, CLI for competitions/trading/leaderboards",
   "repository": {
     "type": "git",

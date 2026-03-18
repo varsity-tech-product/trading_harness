@@ -59,6 +59,26 @@ _EXITS: dict[str, type] = {
 # Builder
 # ---------------------------------------------------------------------------
 
+# Common param aliases that agents use (maps wrong name → correct name).
+_PARAM_ALIASES: dict[str, str] = {
+    "tp_multiple": "atr_tp_mult",
+    "sl_multiple": "atr_sl_mult",
+    "tp_mult": "atr_tp_mult",
+    "sl_mult": "atr_sl_mult",
+    "atr_take_profit_multiple": "atr_tp_mult",
+    "atr_stop_loss_multiple": "atr_sl_mult",
+    "atr_multiplier_tp": "atr_tp_mult",
+    "atr_multiplier_sl": "atr_sl_mult",
+    "take_profit_multiple": "atr_tp_mult",
+    "stop_loss_multiple": "atr_sl_mult",
+}
+
+
+def _normalize_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Apply alias normalization so agents don't need exact param names."""
+    return {_PARAM_ALIASES.get(k, k): v for k, v in params.items()}
+
+
 def _build_component(registry: dict[str, type], config: dict[str, Any] | None) -> Any:
     if not config:
         return None
@@ -69,7 +89,7 @@ def _build_component(registry: dict[str, type], config: dict[str, Any] | None) -
             f"Unknown strategy component type {type_name!r}. "
             f"Available: {', '.join(sorted(registry.keys()))}"
         )
-    params = {k: v for k, v in config.items() if k != "type"}
+    params = _normalize_params({k: v for k, v in config.items() if k != "type"})
     return cls(**params)
 
 
@@ -88,13 +108,27 @@ def build_exit_rule(config: dict[str, Any] | None) -> ExitRule | None:
     return _build_component(_EXITS, config)
 
 
-def available_components() -> dict[str, list[str]]:
-    """Return a catalog of all available strategy component types."""
+def available_components() -> dict[str, Any]:
+    """Return a catalog of all available strategy components with their param names."""
+    import dataclasses
+
+    def _params_for(cls: type) -> dict[str, str]:
+        if dataclasses.is_dataclass(cls):
+            return {
+                f.name: type(f.default).__name__ if f.default is not dataclasses.MISSING else f.type.__name__ if isinstance(f.type, type) else str(f.type)
+                for f in dataclasses.fields(cls)
+                if f.name != "name"
+            }
+        return {}
+
+    def _registry_with_params(registry: dict[str, type]) -> dict[str, dict[str, str]]:
+        return {name: _params_for(cls) for name, cls in sorted(registry.items())}
+
     return {
-        "sizing": sorted(_SIZERS.keys()),
-        "tpsl": sorted(_TPSL.keys()),
-        "entry_filters": sorted(_FILTERS.keys()),
-        "exit_rules": sorted(_EXITS.keys()),
+        "sizing": _registry_with_params(_SIZERS),
+        "tpsl": _registry_with_params(_TPSL),
+        "entry_filters": _registry_with_params(_FILTERS),
+        "exit_rules": _registry_with_params(_EXITS),
     }
 
 
