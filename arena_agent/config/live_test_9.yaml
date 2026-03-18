@@ -1,0 +1,48 @@
+# Live test config for competition 9
+competition_id: 9
+symbol: BTCUSDT
+interval: 1m
+tick_interval_seconds: 30
+kline_limit: 120
+orderbook_depth: 20
+stop_when_competition_inactive: true
+error_backoff_seconds: 5
+dry_run: false
+adapter_retry_attempts: 3
+adapter_retry_backoff_seconds: 0.5
+adapter_min_call_spacing_seconds: 0.0
+
+policy:
+  type: agent_exec
+  backend: claude
+  indicator_mode: full
+  timeout_seconds: 120
+  fail_open_to_hold: true
+  sandbox_mode: read-only
+  extra_instructions: ""
+
+risk_limits:
+  max_position_size_pct: 0.1
+  max_absolute_size: 0.01
+  min_size: 0.001
+  quantity_precision: 3
+  price_precision: 2
+  min_seconds_between_trades: 30
+  allow_long: true
+  allow_short: true
+
+storage:
+  transition_path: ./artifacts/live_test_9_transitions.jsonl
+  journal_path: ./artifacts/live_test_9_journal.jsonl
+  max_in_memory_transitions: 1000
+
+observability:
+  enabled: true
+  host: 127.0.0.1
+  port: 8765
+  max_transitions: 20
+  max_logs: 50
+  no_transition_threshold_seconds: 90
+  no_transition_error_threshold_seconds: 180
+  max_consecutive_runtime_errors: 3
+  supervisor_stop_on_error: false

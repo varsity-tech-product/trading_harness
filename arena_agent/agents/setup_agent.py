@@ -219,6 +219,7 @@ class SetupAgent:
         backend_name: str,
         response_key: str = "result",
     ) -> dict[str, Any]:
+        logger.debug("setup_agent cmd: %s", " ".join(command))
         result = subprocess.run(
             command,
             input=prompt,
@@ -228,17 +229,30 @@ class SetupAgent:
             timeout=self.timeout,
             check=False,
         )
+        stderr_text = (result.stderr or "").strip()
+        if stderr_text:
+            logger.info("setup_agent stderr:\n%s", stderr_text[:2000])
         if result.returncode != 0:
-            stderr = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(f"{backend_name} failed with code={result.returncode}: {stderr[:500]}")
+            raise RuntimeError(f"{backend_name} failed with code={result.returncode}: {(stderr_text or result.stdout or '')[:500]}")
         raw = (result.stdout or "").strip()
         if not raw:
             raise RuntimeError(f"{backend_name} returned empty output")
+        logger.debug("setup_agent raw output (%d bytes): %s", len(raw), raw[:3000])
 
         try:
             wrapper = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise ValueError(f"{backend_name} returned invalid JSON: {raw[:500]}") from exc
+
+        # Log tool use from the wrapper if present
+        if isinstance(wrapper, dict):
+            for key in ("tool_uses", "tool_use", "messages"):
+                if key in wrapper:
+                    logger.info("setup_agent %s: %s", key, json.dumps(wrapper[key], default=str)[:2000])
+            # Log cost/usage stats if available
+            for key in ("usage", "stats", "cost_usd", "duration_ms", "num_turns"):
+                if key in wrapper:
+                    logger.info("setup_agent %s: %s", key, wrapper[key])
 
         if isinstance(wrapper, dict) and response_key in wrapper:
             result_text = str(wrapper[response_key]).strip()
@@ -256,6 +270,7 @@ class SetupAgent:
                 raise ValueError(f"{backend_name} result is not valid JSON: {result_text[:500]}")
         if not isinstance(payload, dict):
             raise ValueError(f"{backend_name} payload must be an object, got: {payload!r}")
+        logger.info("setup_agent decision: %s", json.dumps(payload, default=str)[:1000])
         return payload
 
     @staticmethod

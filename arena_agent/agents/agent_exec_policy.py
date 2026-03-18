@@ -260,6 +260,7 @@ class AgentExecPolicy(Policy):
         if self.model:
             command.extend(["--model", self.model])
 
+        self._logger.debug("runtime_agent cmd: %s", " ".join(command))
         decision_cwd = self.cwd or tempfile.gettempdir()
         result = self.subprocess_runner(
             command,
@@ -270,12 +271,15 @@ class AgentExecPolicy(Policy):
             timeout=self.timeout_seconds,
             check=False,
         )
+        stderr_text = (result.stderr or "").strip()
+        if stderr_text:
+            self._logger.info("runtime_agent stderr:\n%s", stderr_text[:2000])
         if result.returncode != 0:
-            stderr = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(f"claude failed with code={result.returncode}: {stderr[:500]}")
+            raise RuntimeError(f"claude failed with code={result.returncode}: {(stderr_text or result.stdout or '')[:500]}")
         raw_output = (result.stdout or "").strip()
         if not raw_output:
             raise RuntimeError("claude returned empty output")
+        self._logger.debug("runtime_agent raw output (%d bytes): %s", len(raw_output), raw_output[:3000])
 
         # --output-format json wraps the response: {"result": "...", ...}
         # The "result" field contains the model text which should be valid JSON
@@ -285,6 +289,15 @@ class AgentExecPolicy(Policy):
             wrapper = json.loads(raw_output)
         except json.JSONDecodeError as exc:
             raise ValueError(f"claude returned invalid JSON: {raw_output[:500]}") from exc
+
+        # Log tool use and stats from the wrapper if present
+        if isinstance(wrapper, dict):
+            for key in ("tool_uses", "tool_use", "messages"):
+                if key in wrapper:
+                    self._logger.info("runtime_agent %s: %s", key, json.dumps(wrapper[key], default=str)[:2000])
+            for key in ("usage", "stats", "cost_usd", "duration_ms", "num_turns"):
+                if key in wrapper:
+                    self._logger.info("runtime_agent %s: %s", key, wrapper[key])
 
         if isinstance(wrapper, dict) and "result" in wrapper:
             result_text = str(wrapper["result"]).strip()
@@ -300,6 +313,7 @@ class AgentExecPolicy(Policy):
             raise ValueError(f"claude result is not valid JSON: {result_text[:500]}") from exc
         if not isinstance(payload, dict):
             raise ValueError(f"claude payload must be an object, got: {payload!r}")
+        self._logger.info("runtime_agent decision: %s", json.dumps(payload, default=str)[:1000])
         return payload
 
     def _run_gemini(self, prompt: str) -> dict[str, Any]:
