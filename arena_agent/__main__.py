@@ -159,24 +159,38 @@ def _apply_agent_override(config, args: Any):
         return replace(config, policy=policy)
     if agent in _AGENT_EXEC_BACKENDS:
         backend = _AGENT_EXEC_BACKENDS[agent]
-        # Resolve timeout: CLI flag > YAML config > 120s default
-        yaml_timeout = config.policy.get("timeout_seconds") if isinstance(config.policy, dict) else None
-        timeout = args.timeout_seconds or yaml_timeout or 120.0
-        policy = {
-            "type": "agent_exec",
-            "backend": backend,
-            "model": args.model,
-            "timeout_seconds": timeout,
-            "recent_transition_limit": args.recent_transitions,
-            "fail_open_to_hold": True,
-            "sandbox_mode": "read-only",
-            "cwd": str(Path.cwd()),
-            "extra_instructions": args.extra_instructions,
-            "strategy_context": args.strategy_context,
-            "bootstrap_from_transition_log": True,
-        }
+        yaml_policy = config.policy if isinstance(config.policy, dict) else {}
+        # Start from the full YAML policy, then override specific fields.
+        # This preserves indicator_mode, extra_instructions, strategy_context,
+        # and any other policy fields the user set in the YAML config.
+        policy = dict(yaml_policy)
+        policy["type"] = "agent_exec"
+        policy["backend"] = backend
+        policy["cwd"] = str(Path.cwd())
+        # CLI flag > YAML config > default for fields with CLI overrides
+        if args.model is not None:
+            policy["model"] = args.model
+        elif "model" not in policy:
+            policy["model"] = None
+        policy["timeout_seconds"] = (
+            args.timeout_seconds or yaml_policy.get("timeout_seconds") or 120.0
+        )
+        policy["recent_transition_limit"] = args.recent_transitions
+        if args.extra_instructions:
+            policy["extra_instructions"] = args.extra_instructions
+        elif "extra_instructions" not in policy:
+            policy["extra_instructions"] = ""
+        if args.strategy_context:
+            policy["strategy_context"] = args.strategy_context
+        elif "strategy_context" not in policy:
+            policy["strategy_context"] = ""
+        # Defaults for fields that must exist
+        policy.setdefault("indicator_mode", "full")
+        policy.setdefault("fail_open_to_hold", True)
+        policy.setdefault("sandbox_mode", "read-only")
+        policy.setdefault("bootstrap_from_transition_log", True)
         if backend == "openclaw":
-            policy["openclaw_agent_id"] = "arena-trader"
+            policy.setdefault("openclaw_agent_id", "arena-trader")
         return replace(config, policy=policy)
     return config
 

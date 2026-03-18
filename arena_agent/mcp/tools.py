@@ -322,6 +322,108 @@ def track_event(competition_id: int, event_type: str, payload: Optional[dict] = 
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Setup Agent — LLM-powered strategy configuration
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def setup_decide(
+    competition_id: int,
+    backend: str = "auto",
+    model: Optional[str] = None,
+    config_path: Optional[str] = None,
+):
+    """Run the setup agent to get a config decision."""
+    import os
+    from pathlib import Path
+    from datetime import datetime, timezone
+
+    from arena_agent.agents.setup_agent import SetupAgent
+    from arena_agent.setup.context_builder import build_setup_context
+    from arena_agent.setup.memory import SetupMemory
+
+    # Load current config from YAML
+    config: dict = {}
+    if config_path:
+        resolved = Path(config_path)
+    else:
+        from arena_agent.runtime_env import default_runtime_config_path
+        resolved = default_runtime_config_path("codex_agent_config.yaml")
+    if resolved.exists():
+        import yaml
+        config = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+
+    # Load memory
+    arena_home = os.environ.get("ARENA_HOME") or os.environ.get("ARENA_ROOT") or str(Path.cwd())
+    memory_path = Path(arena_home) / "setup_memory.json"
+    memory = SetupMemory(memory_path)
+    recent = memory.recent(5)
+
+    # Build context
+    context = build_setup_context(competition_id, config, recent)
+
+    # Run setup agent
+    agent = SetupAgent(backend=backend, model=model)
+    memory_text = memory.format_for_prompt(5)
+    decision = agent.decide(context, memory_text)
+
+    return decision.to_dict()
+
+
+def setup_record(
+    competition_id: int,
+    title: str = "",
+    strategy_summary: str = "",
+    adjustments_made: int = 0,
+):
+    """Record a competition result in setup memory."""
+    import os
+    from pathlib import Path
+    from datetime import datetime, timezone
+
+    from arena_agent.setup.memory import SetupMemory, CompetitionRecord
+
+    # Get final account state
+    try:
+        account = varsity_tools.get_live_account(competition_id)
+        equity = float(account.get("capital", 0) if isinstance(account, dict) else 0)
+        initial = float(account.get("initialBalance", 5000) if isinstance(account, dict) else 5000)
+        trades = int(account.get("tradesCount", 0) if isinstance(account, dict) else 0)
+        pnl = equity - initial
+        pnl_pct = (pnl / initial * 100) if initial else 0
+    except Exception:
+        equity = 0
+        pnl = 0
+        pnl_pct = 0
+        trades = 0
+        initial = 5000
+
+    arena_home = os.environ.get("ARENA_HOME") or os.environ.get("ARENA_ROOT") or str(Path.cwd())
+    memory_path = Path(arena_home) / "setup_memory.json"
+    memory = SetupMemory(memory_path)
+
+    record = CompetitionRecord(
+        competition_id=competition_id,
+        title=title,
+        final_equity=equity,
+        pnl=pnl,
+        pnl_pct=pnl_pct,
+        trades_used=trades,
+        strategy_summary=strategy_summary or "default config",
+        adjustments_made=adjustments_made,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+    memory.append(record)
+
+    return {
+        "recorded": True,
+        "competition_id": competition_id,
+        "pnl": pnl,
+        "pnl_pct": pnl_pct,
+        "memory_path": str(memory_path),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Composite tools — higher-level actions combining multiple API calls
 # ═══════════════════════════════════════════════════════════════════════════
 

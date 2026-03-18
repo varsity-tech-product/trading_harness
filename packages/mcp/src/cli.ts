@@ -63,6 +63,7 @@ import {
   tailLines,
   writeRuntimeState,
 } from "./util/runtime-state.js";
+import { executeUpdate } from "./tools/runtime-config.js";
 
 const argv = process.argv.slice(2);
 const invokedAs = basename(process.argv[1] ?? "arena-agent");
@@ -632,11 +633,12 @@ async function runAutoTrade(): Promise<number> {
   const agent = (optionValue("--agent") ?? state.defaultAgent) as ManagedAgent;
   const model = optionValue("--model") ?? state.defaultModel ?? undefined;
   const pollMinutes = Number(optionValue("--poll") ?? "5");
+  const noSetup = hasFlag("--no-setup");
   const python = findPython(home);
   const env = buildChildEnv(home);
 
   console.log("Arena auto-trade daemon starting.");
-  console.log(`Agent: ${agent} | Mode: ${state.liveTrading ? "LIVE" : "dry-run"} | Poll: ${pollMinutes}m`);
+  console.log(`Agent: ${agent} | Mode: ${state.liveTrading ? "LIVE" : "dry-run"} | Poll: ${pollMinutes}m | Setup: ${noSetup ? "off" : "on"}`);
 
   // Catch SIGTERM/SIGINT for graceful shutdown
   let shutdownRequested = false;
@@ -684,8 +686,33 @@ async function runAutoTrade(): Promise<number> {
       }
       if (shutdownRequested || competition.status !== "live") continue;
 
-      // 4. Start runtime
+      // 4. Run setup agent for initial config (before runtime start)
       const configPath = resolveUserConfigPath(home, state, optionValue("--config"), agent);
+      let setupAdjustments = 0;
+
+      if (!noSetup) {
+        try {
+          console.log("Running setup agent for initial configuration...");
+          const setupDecision = (await bridge.callTool("varsity.setup_decide", {
+            competition_id: competition.id,
+            backend: agent,
+            model: model ?? null,
+            config_path: configPath,
+          })) as any;
+
+          if (setupDecision?.action === "update" && setupDecision.overrides) {
+            executeUpdate({ overrides: setupDecision.overrides, config: configPath, agent }, home);
+            setupAdjustments++;
+            console.log(`Setup agent: ${setupDecision.reason}`);
+          } else {
+            console.log(`Setup agent: hold — ${setupDecision?.reason ?? "no changes needed"}`);
+          }
+        } catch (err) {
+          console.log(`Setup agent error (non-fatal): ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
+      // 5. Start runtime
       const runtimeArgs = [
         "-m", "arena_agent", "run",
         "--agent", agent,
@@ -696,7 +723,7 @@ async function runAutoTrade(): Promise<number> {
 
       const logPath = resolve(logsDirPath(home), `auto-${competition.id}-${Date.now()}.log`);
       const logFd = openSync(logPath, "a");
-      const runtimeChild = spawn(python, runtimeArgs, { cwd: home, env, stdio: ["ignore", logFd, logFd] });
+      let runtimeChild = spawn(python, runtimeArgs, { cwd: home, env, stdio: ["ignore", logFd, logFd] });
       closeSync(logFd);
 
       if (runtimeChild.pid) {
@@ -711,7 +738,7 @@ async function runAutoTrade(): Promise<number> {
       }
       console.log(`Runtime started (pid ${runtimeChild.pid}). Logs: ${logPath}`);
 
-      // 5. Monitor loop — poll until competition ends or shutdown
+      // 6. Monitor loop — poll until competition ends or shutdown
       let runtimeExited = false;
       runtimeChild.once("exit", () => { runtimeExited = true; });
 
@@ -739,12 +766,57 @@ async function runAutoTrade(): Promise<number> {
               `  #${competition.id} | equity: $${account.capital.toFixed(2)} | PnL: $${pnl} | trades: ${account.tradesCount ?? "?"}`,
             );
           }
+
+          // Run setup agent for mid-competition adjustment
+          if (!noSetup) {
+            try {
+              const adjustDecision = (await bridge.callTool("varsity.setup_decide", {
+                competition_id: competition.id,
+                backend: agent,
+                model: model ?? null,
+                config_path: configPath,
+              })) as any;
+
+              if (adjustDecision?.action === "update" && adjustDecision.overrides) {
+                executeUpdate({ overrides: adjustDecision.overrides, config: configPath, agent }, home);
+                setupAdjustments++;
+                console.log(`  Setup agent adjustment: ${adjustDecision.reason}`);
+
+                if (adjustDecision.restart_runtime && !runtimeExited) {
+                  console.log("  Restarting runtime for config changes...");
+                  runtimeChild.kill("SIGTERM");
+                  await Promise.race([waitForExit(runtimeChild), sleep(5000)]);
+                  if (!runtimeChild.killed) runtimeChild.kill("SIGKILL");
+
+                  // Respawn runtime with updated config
+                  const newLogFd = openSync(logPath, "a");
+                  runtimeExited = false;
+                  runtimeChild = spawn(python, runtimeArgs, { cwd: home, env, stdio: ["ignore", newLogFd, newLogFd] });
+                  closeSync(newLogFd);
+                  runtimeChild.once("exit", () => { runtimeExited = true; });
+                  if (runtimeChild.pid) {
+                    writeRuntimeState(home, {
+                      pid: runtimeChild.pid,
+                      agent,
+                      configPath,
+                      logPath,
+                      startedAt: new Date().toISOString(),
+                      monitorPort: state.monitorPort,
+                    });
+                  }
+                  console.log(`  Runtime restarted (pid ${runtimeChild.pid}).`);
+                }
+              }
+            } catch {
+              // Non-fatal — setup agent errors don't stop trading
+            }
+          }
         } catch (err) {
           // Non-fatal — keep going
         }
       }
 
-      // 6. Cleanup: close position, stop runtime
+      // 7. Cleanup: close position, stop runtime
       console.log(`Stopping runtime for #${competition.id}...`);
       try {
         const pos = (await bridge.callTool("varsity.live_position", {
@@ -768,7 +840,7 @@ async function runAutoTrade(): Promise<number> {
       }
       clearRuntimeState(home);
 
-      // 7. Log results
+      // 8. Record results in setup memory
       try {
         const result = (await bridge.callTool("varsity.live_account", {
           competition_id: competition.id,
@@ -776,6 +848,21 @@ async function runAutoTrade(): Promise<number> {
         if (result?.capital) {
           const pnl = (result.capital - (result.initialBalance ?? 5000)).toFixed(2);
           console.log(`Competition #${competition.id} final: equity=$${result.capital.toFixed(2)}, PnL=$${pnl}`);
+        }
+
+        // Save to setup memory for future competitions
+        if (!noSetup) {
+          try {
+            await bridge.callTool("varsity.setup_record", {
+              competition_id: competition.id,
+              title: competition.title,
+              strategy_summary: `agent=${agent}, adjustments=${setupAdjustments}`,
+              adjustments_made: setupAdjustments,
+            });
+            console.log("Competition result saved to setup memory.");
+          } catch {
+            // Non-fatal
+          }
         }
       } catch {}
 
@@ -964,7 +1051,7 @@ function printUsage(invocation: string): void {
   console.log("  init                     Bootstrap a managed Arena home");
   console.log("  doctor                   Check managed home, Python, deps, and backend CLI");
   console.log("  up                       Start trading runtime and open the TUI monitor");
-  console.log("  auto                     Autonomous daemon: find, join, trade, repeat");
+  console.log("  auto                     Autonomous daemon: find, join, trade, repeat (LLM setup agent configures strategy)");
   console.log("  monitor                  Attach to the TUI monitor only");
   console.log("  upgrade                  Reinstall or refresh the managed Python runtime");
   console.log("  status                   Show runtime pid, config, and monitor port");

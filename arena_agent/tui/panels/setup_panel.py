@@ -1,4 +1,4 @@
-"""Setup agent activity panel — shows auto daemon logs and MCP tool calls."""
+"""Setup agent activity panel — shows auto daemon logs, LLM decisions, and memory."""
 
 from __future__ import annotations
 
@@ -8,11 +8,12 @@ from pathlib import Path
 
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 from textual.widgets import Static
 
 
 class SetupPanel(Static):
-    """Reads the auto daemon log file and displays recent setup agent activity."""
+    """Reads the auto daemon log file and setup memory, displays setup agent activity."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -29,18 +30,45 @@ class SetupPanel(Static):
             self._log_path = _find_auto_log(controller)
 
         lines = self._read_recent_lines(30)
+        memory_records = _load_memory_summary()
 
         table = Table(expand=True)
         table.add_column("Time", style="dim", width=8)
         table.add_column("Event")
+
+        # Show setup agent log lines with highlighted decisions
         if lines:
-            for line in lines[-15:]:
+            for line in lines[-12:]:
                 time_str, event = _parse_line(line)
-                table.add_row(time_str, event)
+                style = ""
+                if "Setup agent" in event or "setup agent" in event:
+                    style = "bold cyan"
+                elif "adjustment" in event.lower():
+                    style = "yellow"
+                elif "Restarting runtime" in event:
+                    style = "bold yellow"
+                elif "memory" in event.lower():
+                    style = "green"
+                table.add_row(time_str, Text(event, style=style) if style else event)
         else:
             table.add_row("-", "No setup agent activity (start with: arena-agent auto)")
 
-        title = "Setup Agent Activity"
+        # Show memory summary if available
+        if memory_records:
+            table.add_row("", "")
+            table.add_row("", Text("Past Competitions:", style="bold"))
+            for rec in memory_records[-3:]:
+                pnl_style = "green" if rec.get("pnl", 0) >= 0 else "red"
+                pnl_str = f"{rec.get('pnl', 0):+.2f} ({rec.get('pnl_pct', 0):+.1f}%)"
+                table.add_row(
+                    "",
+                    Text(
+                        f"  #{rec.get('competition_id', '?')} | PnL: {pnl_str} | adj: {rec.get('adjustments_made', 0)}",
+                        style=pnl_style,
+                    ),
+                )
+
+        title = "Setup Agent"
         if self._log_path:
             title += f" | {os.path.basename(self._log_path)}"
         self.update(Panel(table, title=title, border_style="green"))
@@ -70,14 +98,7 @@ class SetupPanel(Static):
 def _find_auto_log(controller) -> str | None:
     """Try to find the auto daemon log from runtime state."""
     snapshot = controller.snapshot
-    runtime = snapshot.get("runtime", {})
-    # Check if there's a log path hint from runtime config
-    # Fallback: scan logs dir for auto-*.log
-    connection = snapshot.get("connection", {})
-    host = connection.get("host", "127.0.0.1")
-    port = connection.get("port", 8767)
     # Try common arena home locations
-    # Try to find arena home from connection info or common paths
     homes = [
         os.path.expanduser("~/.arena-agent"),
         os.path.expanduser("~/.arena-trader-6cff"),
@@ -104,6 +125,29 @@ def _find_auto_log(controller) -> str | None:
             if candidates:
                 return str(candidates[0])
     return None
+
+
+def _load_memory_summary() -> list[dict]:
+    """Load recent records from setup_memory.json."""
+    homes = [
+        os.path.expanduser("~/.arena-agent"),
+        os.path.expanduser("~/.arena-trader-6cff"),
+    ]
+    env_home = os.environ.get("ARENA_HOME") or os.environ.get("ARENA_ROOT")
+    if env_home and env_home not in homes:
+        homes.insert(0, env_home)
+
+    for home in homes:
+        memory_path = os.path.join(home, "setup_memory.json")
+        if os.path.exists(memory_path):
+            try:
+                with open(memory_path, "r") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return data[-5:]
+            except Exception:
+                pass
+    return []
 
 
 def _parse_line(line: str) -> tuple[str, str]:

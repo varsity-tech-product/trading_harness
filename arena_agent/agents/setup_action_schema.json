@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["update", "hold"]
+    },
+    "overrides": {
+      "type": ["object", "null"],
+      "description": "Config fields to deep-merge into the runtime YAML. Only include fields you want to change."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short explanation of the decision."
+    },
+    "restart_runtime": {
+      "type": "boolean",
+      "description": "Whether the runtime process needs to restart for changes to take effect."
+    }
+  },
+  "required": ["action", "reason"]
+}

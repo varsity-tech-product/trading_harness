@@ -310,6 +310,26 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
     def auto_join() -> dict:
         return tools.auto_join()
 
+    # ── Setup Agent (LLM-powered strategy configuration) ───────────────
+
+    @mcp.tool(name="varsity.setup_decide", description="Run the LLM setup agent to decide config changes for a competition. Returns action (update/hold), overrides to apply, reason, and whether runtime needs restart.")
+    def setup_decide(
+        competition_id: int,
+        backend: str = "auto",
+        model: str | None = None,
+        config_path: str | None = None,
+    ) -> dict:
+        return to_jsonable(tools.setup_decide(competition_id, backend, model, config_path))
+
+    @mcp.tool(name="varsity.setup_record", description="Record a competition result in setup agent memory for future strategy decisions.")
+    def setup_record(
+        competition_id: int,
+        title: str = "",
+        strategy_summary: str = "",
+        adjustments_made: int = 0,
+    ) -> dict:
+        return to_jsonable(tools.setup_record(competition_id, title, strategy_summary, adjustments_made))
+
     return mcp
 
 
