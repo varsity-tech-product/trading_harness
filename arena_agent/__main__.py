@@ -83,8 +83,8 @@ def _run_runtime(argv: list[str]) -> None:
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=45.0,
-        help="Decision timeout for the CLI agent.",
+        default=None,
+        help="Decision timeout for the CLI agent. Defaults to config value or 120s.",
     )
     parser.add_argument(
         "--recent-transitions",
@@ -159,11 +159,14 @@ def _apply_agent_override(config, args: Any):
         return replace(config, policy=policy)
     if agent in _AGENT_EXEC_BACKENDS:
         backend = _AGENT_EXEC_BACKENDS[agent]
+        # Resolve timeout: CLI flag > YAML config > 120s default
+        yaml_timeout = config.policy.get("timeout_seconds") if isinstance(config.policy, dict) else None
+        timeout = args.timeout_seconds or yaml_timeout or 120.0
         policy = {
             "type": "agent_exec",
             "backend": backend,
             "model": args.model,
-            "timeout_seconds": args.timeout_seconds,
+            "timeout_seconds": timeout,
             "recent_transition_limit": args.recent_transitions,
             "fail_open_to_hold": True,
             "sandbox_mode": "read-only",

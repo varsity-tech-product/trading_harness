@@ -79,9 +79,14 @@ def _normalize_params(params: dict[str, Any]) -> dict[str, Any]:
     return {_PARAM_ALIASES.get(k, k): v for k, v in params.items()}
 
 
-def _build_component(registry: dict[str, type], config: dict[str, Any] | None) -> Any:
+def _build_component(registry: dict[str, type], config: dict[str, Any] | str | None) -> Any:
     if not config:
         return None
+    if isinstance(config, str):
+        # Agent passed a string like "none" or a type name directly
+        if config.lower() == "none":
+            return None
+        config = {"type": config}
     type_name = str(config.get("type", "")).lower()
     cls = registry.get(type_name)
     if cls is None:
