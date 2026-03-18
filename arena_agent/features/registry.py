@@ -42,9 +42,26 @@ def normalize_params(params: dict[str, Any]) -> dict[str, Any]:
         "nbdev_up": "nbdevup",
         "nbdev_down": "nbdevdn",
     }
+    # Param keys that must be numeric (int or float).
+    _INT_KEYS = {"timeperiod", "fastperiod", "slowperiod", "signalperiod",
+                 "fastk_period", "slowk_period", "slowd_period",
+                 "penetration", "acceleration", "maximum"}
+    _FLOAT_KEYS = {"nbdevup", "nbdevdn"}
     normalized = {}
     for key, value in params.items():
-        normalized[aliases.get(key, key)] = value
+        canon = aliases.get(key, key)
+        # Sanitize: drop non-numeric values for numeric params
+        if canon in _INT_KEYS:
+            try:
+                value = int(float(value))
+            except (TypeError, ValueError):
+                continue  # skip malformed param
+        elif canon in _FLOAT_KEYS:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+        normalized[canon] = value
     return normalized
 
 

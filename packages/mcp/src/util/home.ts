@@ -217,7 +217,13 @@ policy:
   extra_instructions: >-
     All available technical indicators are pre-computed in the features section.
     Use trend, momentum, volatility, and volume signals together.
-    Be decisive, but prefer HOLD when the market regime is ambiguous.
+    Be decisive — prefer HOLD only when the signal is genuinely ambiguous.
+    Do not HOLD for extended periods when flat with trades remaining.
+    If flat for 5+ consecutive iterations, actively look for an entry.
+    Consider short positions equally — do not default to long bias.
+    CLOSE_POSITION takes NO size parameter — always set size to null.
+    TP/SL params are exactly: atr_tp_mult and atr_sl_mult (check strategy_catalog for all param names).
+    Indicator params must be numeric (e.g. period: 14, not period: "MACD_signal").
 
 strategy:
   sizing:
