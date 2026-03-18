@@ -698,7 +698,18 @@ async function runAutoTrade(): Promise<number> {
             backend: agent,
             model: model ?? null,
             config_path: configPath,
-          })) as any;
+          }, { timeout: 360_000 })) as any;
+
+          // Send initial chat message if requested
+          if (setupDecision?.chat_message) {
+            try {
+              await bridge.callTool("varsity.chat_send", {
+                competition_id: competition.id,
+                message: setupDecision.chat_message,
+              });
+              console.log(`Setup agent chat: ${setupDecision.chat_message.slice(0, 80)}`);
+            } catch { /* non-fatal */ }
+          }
 
           if (setupDecision?.action === "update" && setupDecision.overrides) {
             executeUpdate({ overrides: setupDecision.overrides, config: configPath, agent }, home);
@@ -741,10 +752,13 @@ async function runAutoTrade(): Promise<number> {
       // 6. Monitor loop — poll until competition ends or shutdown
       let runtimeExited = false;
       runtimeChild.once("exit", () => { runtimeExited = true; });
+      let nextPollMs = pollMinutes * 60_000;
 
       while (!shutdownRequested && !runtimeExited) {
-        await interruptableSleep(pollMinutes * 60_000, () => shutdownRequested || runtimeExited);
+        await interruptableSleep(nextPollMs, () => shutdownRequested || runtimeExited);
         if (shutdownRequested || runtimeExited) break;
+        // Reset to default; setup agent may override below
+        nextPollMs = pollMinutes * 60_000;
 
         try {
           const status = (await bridge.callTool("varsity.competition_detail", {
@@ -775,7 +789,26 @@ async function runAutoTrade(): Promise<number> {
                 backend: agent,
                 model: model ?? null,
                 config_path: configPath,
-              })) as any;
+              }, { timeout: 360_000 })) as any;
+
+              // Use LLM-requested poll interval if provided
+              if (typeof adjustDecision?.next_check_seconds === "number") {
+                nextPollMs = adjustDecision.next_check_seconds * 1000;
+                console.log(`  Setup agent next check: ${adjustDecision.next_check_seconds}s`);
+              }
+
+              // Send chat message if the setup agent wants to
+              if (adjustDecision?.chat_message) {
+                try {
+                  await bridge.callTool("varsity.chat_send", {
+                    competition_id: competition.id,
+                    message: adjustDecision.chat_message,
+                  });
+                  console.log(`  Setup agent chat: ${adjustDecision.chat_message.slice(0, 80)}`);
+                } catch {
+                  // Non-fatal
+                }
+              }
 
               if (adjustDecision?.action === "update" && adjustDecision.overrides) {
                 executeUpdate({ overrides: adjustDecision.overrides, config: configPath, agent }, home);

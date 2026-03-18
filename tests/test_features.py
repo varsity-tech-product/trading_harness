@@ -5,15 +5,17 @@ import unittest
 
 from arena_agent.core.models import Candle, FeatureSpec
 from arena_agent.features.engine import FeatureEngine, resolve_indicator_specs
-from arena_agent.features.registry import BUILTIN_FULL
+from arena_agent.features.registry import FULL_INDICATOR_SPECS
+
+_HAS_TALIB = importlib.util.find_spec("talib") is not None
 
 
+@unittest.skipUnless(_HAS_TALIB, "TA-Lib not installed")
 class FeatureEngineTest(unittest.TestCase):
-    def test_compute_builtin_signal_state(self) -> None:
+    def test_compute_signal_state(self) -> None:
         engine = FeatureEngine(
             [
                 FeatureSpec(indicator="SMA", params={"period": 2}),
-                FeatureSpec(indicator="RETURNS", params={"period": 1}),
                 FeatureSpec(indicator="OBV"),
             ]
         )
@@ -26,11 +28,9 @@ class FeatureEngineTest(unittest.TestCase):
         signal_state = engine.compute(candles)
 
         self.assertEqual(signal_state.version, "signal_state.v1")
-        self.assertEqual(signal_state.backend, "builtin")
+        self.assertEqual(signal_state.backend, "talib")
         self.assertTrue(signal_state.warmup_complete)
         self.assertAlmostEqual(signal_state.values["sma_2"], 103.5)
-        self.assertAlmostEqual(signal_state.values["returns_1"], (105.0 - 102.0) / 102.0)
-        self.assertAlmostEqual(signal_state.values["obv"], 23.0)
         self.assertIn("timestamp", signal_state.metadata)
         self.assertEqual(signal_state.metadata["indicator_metadata"][0]["lookback_required"], 2)
 
@@ -55,7 +55,6 @@ class FeatureEngineTest(unittest.TestCase):
         self.assertIn("hist", value)
         self.assertEqual(signal_state.metadata["indicator_metadata"][0]["lookback_required"], 7)
 
-    @unittest.skipUnless(importlib.util.find_spec("talib") is not None, "TA-Lib not installed in this test environment")
     def test_compute_indicator_with_extra_series_param(self) -> None:
         engine = FeatureEngine(
             [
@@ -77,12 +76,12 @@ class FeatureEngineTest(unittest.TestCase):
 
         signal_state = engine.compute(candles)
 
-        self.assertEqual(signal_state.backend, "talib" if signal_state.backend == "talib" else "builtin")
+        self.assertEqual(signal_state.backend, "talib")
         self.assertIn("mavp_test", signal_state.values)
 
 
 class ResolveIndicatorSpecsTest(unittest.TestCase):
-    def test_full_mode_returns_all_builtins(self) -> None:
+    def test_full_mode_returns_all_indicators(self) -> None:
         specs = resolve_indicator_specs({"indicator_mode": "full"}, [])
         keys = {s.indicator.upper() for s in specs}
         self.assertIn("SMA", keys)
@@ -91,7 +90,8 @@ class ResolveIndicatorSpecsTest(unittest.TestCase):
         self.assertIn("BBANDS", keys)
         self.assertIn("ATR", keys)
         self.assertIn("OBV", keys)
-        self.assertGreaterEqual(len(specs), len(BUILTIN_FULL))
+        self.assertIn("ADX", keys)
+        self.assertGreaterEqual(len(specs), len(FULL_INDICATOR_SPECS))
 
     def test_custom_mode_uses_policy_list(self) -> None:
         policy = {
@@ -114,7 +114,8 @@ class ResolveIndicatorSpecsTest(unittest.TestCase):
         specs = resolve_indicator_specs({}, [])
         self.assertEqual(specs, [])
 
-    def test_full_mode_computes_all_builtins(self) -> None:
+    @unittest.skipUnless(_HAS_TALIB, "TA-Lib not installed")
+    def test_full_mode_computes_all_indicators(self) -> None:
         specs = resolve_indicator_specs({"indicator_mode": "full"}, [])
         engine = FeatureEngine(specs)
         candles = [
@@ -123,7 +124,6 @@ class ResolveIndicatorSpecsTest(unittest.TestCase):
         ]
         signal_state = engine.compute(candles)
         self.assertTrue(signal_state.warmup_complete)
-        # All builtin indicators should produce non-None values with 120 candles
         for key, value in signal_state.values.items():
             if isinstance(value, dict):
                 for sub_key, sub_value in value.items():

@@ -19,6 +19,16 @@
     "restart_runtime": {
       "type": "boolean",
       "description": "Whether the runtime process needs to restart for changes to take effect."
+    },
+    "next_check_seconds": {
+      "type": ["integer", "null"],
+      "minimum": 60,
+      "maximum": 3600,
+      "description": "How many seconds until the next setup check. 60-3600. Null uses the default poll interval."
+    },
+    "chat_message": {
+      "type": ["string", "null"],
+      "description": "Optional message to send to the competition chat. Use to communicate with other participants."
     }
   },
   "required": ["action", "reason"]

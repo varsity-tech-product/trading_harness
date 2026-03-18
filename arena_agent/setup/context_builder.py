@@ -100,6 +100,57 @@ def build_setup_context(
     except Exception as exc:
         context["performance"] = {"error": str(exc)}
 
+    # Leaderboard position
+    try:
+        lb = varsity_tools.get_competition_leaderboard_me(competition_id)
+        if isinstance(lb, dict) and lb.get("list"):
+            entries = lb["list"]
+            context["leaderboard"] = {
+                "my_rank": entries[0].get("rank") if entries else None,
+                "my_entry": entries[0] if len(entries) == 1 else entries,
+                "total_participants": lb.get("total"),
+            }
+        else:
+            context["leaderboard"] = lb
+    except Exception as exc:
+        context["leaderboard"] = {"error": str(exc)}
+
+    # Recent chat messages (for social intelligence)
+    try:
+        chat = varsity_tools.get_chat_history(competition_id, 20)
+        if isinstance(chat, dict) and chat.get("list"):
+            context["chat_recent"] = [
+                {
+                    "username": msg.get("username"),
+                    "message": msg.get("message", "")[:200],
+                    "timestamp": msg.get("createdAt"),
+                }
+                for msg in chat["list"][-10:]
+            ]
+        elif isinstance(chat, list):
+            context["chat_recent"] = [
+                {
+                    "username": msg.get("username"),
+                    "message": msg.get("message", "")[:200],
+                    "timestamp": msg.get("createdAt"),
+                }
+                for msg in chat[-10:]
+            ]
+        else:
+            context["chat_recent"] = []
+    except Exception:
+        context["chat_recent"] = []
+
+    # Multi-timeframe market view (5m and 15m in addition to the default)
+    for tf in ["5m", "15m"]:
+        if tf == interval:
+            continue
+        try:
+            tf_summary = _compute_market_summary(symbol, tf)
+            context[f"market_{tf}"] = tf_summary
+        except Exception:
+            pass
+
     # Memory from past competitions
     context["memory"] = [r.to_dict() for r in memory]
 

@@ -22,8 +22,6 @@ REGISTRY: dict[str, IndicatorDefinition] = {
     "BBANDS": IndicatorDefinition("BBANDS", ("upper", "middle", "lower"), ("close",)),
     "ATR": IndicatorDefinition("ATR", ("value",), ("high", "low", "close")),
     "OBV": IndicatorDefinition("OBV", ("value",), ("close", "volume")),
-    "RETURNS": IndicatorDefinition("RETURNS", ("value",), ("close",)),
-    "VOLATILITY": IndicatorDefinition("VOLATILITY", ("value",), ("close",)),
 }
 
 SUPPORTED_BASE_INPUTS = {"open", "high", "low", "close", "volume"}
@@ -72,7 +70,7 @@ def feature_key(indicator: str, params: dict[str, Any], explicit_key: str | None
     indicator_name = normalize_indicator_name(indicator)
     params = normalize_params(params)
 
-    if indicator_name in {"SMA", "EMA", "RSI", "ATR", "VOLATILITY"}:
+    if indicator_name in {"SMA", "EMA", "RSI", "ATR"}:
         return f"{indicator_name.lower()}_{int(params.get('timeperiod', 14))}"
     if indicator_name == "MACD":
         return "macd_{fast}_{slow}_{signal}".format(
@@ -88,8 +86,6 @@ def feature_key(indicator: str, params: dict[str, Any], explicit_key: str | None
         )
     if indicator_name == "OBV":
         return "obv"
-    if indicator_name == "RETURNS":
-        return f"returns_{int(params.get('timeperiod', 1))}"
 
     if not params:
         return indicator_name.lower()
@@ -105,12 +101,10 @@ def lookback_required(indicator: str, params: dict[str, Any]) -> int:
     indicator_name = normalize_indicator_name(indicator)
     params = normalize_params(params)
 
-    if indicator_name in {"SMA", "EMA", "RSI", "ATR", "BBANDS", "VOLATILITY"}:
+    if indicator_name in {"SMA", "EMA", "RSI", "ATR", "BBANDS"}:
         return int(params.get("timeperiod", 14))
     if indicator_name == "MACD":
         return int(params.get("slowperiod", 26)) + int(params.get("signalperiod", 9))
-    if indicator_name == "RETURNS":
-        return int(params.get("timeperiod", 1)) + 1
     if indicator_name == "OBV":
         return 1
     return 1
@@ -184,32 +178,26 @@ def _flatten_input_names(input_names: Any) -> set[str]:
 # Indicator presets for policy-driven indicator selection
 # ---------------------------------------------------------------------------
 
-BUILTIN_FULL: list[dict[str, Any]] = [
+FULL_INDICATOR_SPECS: list[dict[str, Any]] = [
+    # Moving averages
     {"indicator": "SMA", "params": {"period": 9}},
     {"indicator": "SMA", "params": {"period": 20}},
     {"indicator": "SMA", "params": {"period": 50}},
     {"indicator": "EMA", "params": {"period": 12}},
     {"indicator": "EMA", "params": {"period": 26}},
+    # Overlap / trend
+    {"indicator": "BBANDS", "params": {"period": 20}},
+    {"indicator": "SAR", "params": {}},
+    # Momentum / oscillator
     {"indicator": "RSI", "params": {"period": 14}},
     {"indicator": "MACD", "params": {"fast_period": 12, "slow_period": 26, "signal_period": 9}},
-    {"indicator": "BBANDS", "params": {"period": 20}},
-    {"indicator": "ATR", "params": {"period": 14}},
-    {"indicator": "OBV", "params": {}},
-    {"indicator": "RETURNS", "params": {"period": 1}},
-    {"indicator": "VOLATILITY", "params": {"period": 20}},
-]
-
-TALIB_CURATED: list[dict[str, Any]] = [
-    # Trend
     {"indicator": "ADX", "params": {"timeperiod": 14}},
     {"indicator": "AROON", "params": {"timeperiod": 14}},
     {"indicator": "CCI", "params": {"timeperiod": 14}},
     {"indicator": "DX", "params": {"timeperiod": 14}},
     {"indicator": "MINUS_DI", "params": {"timeperiod": 14}},
     {"indicator": "PLUS_DI", "params": {"timeperiod": 14}},
-    {"indicator": "SAR", "params": {}},
     {"indicator": "TRIX", "params": {"timeperiod": 14}},
-    # Momentum
     {"indicator": "CMO", "params": {"timeperiod": 14}},
     {"indicator": "MFI", "params": {"timeperiod": 14}},
     {"indicator": "MOM", "params": {"timeperiod": 10}},
@@ -219,24 +207,16 @@ TALIB_CURATED: list[dict[str, Any]] = [
     {"indicator": "ULTOSC", "params": {}},
     {"indicator": "WILLR", "params": {"timeperiod": 14}},
     # Volatility
+    {"indicator": "ATR", "params": {"period": 14}},
     {"indicator": "NATR", "params": {"timeperiod": 14}},
     {"indicator": "TRANGE", "params": {}},
     # Volume
+    {"indicator": "OBV", "params": {}},
     {"indicator": "AD", "params": {}},
     {"indicator": "ADOSC", "params": {}},
 ]
 
 
-def get_full_indicator_specs(include_talib: bool = True) -> list[dict[str, Any]]:
-    """Return FeatureSpec-compatible dicts for the full indicator suite."""
-    specs = list(BUILTIN_FULL)
-    if not include_talib:
-        return specs
-    try:
-        from talib import abstract as talib_abstract
-    except ImportError:
-        return specs
-    for entry in TALIB_CURATED:
-        if hasattr(talib_abstract, entry["indicator"]):
-            specs.append(entry)
-    return specs
+def get_full_indicator_specs() -> list[dict[str, Any]]:
+    """Return FeatureSpec-compatible dicts for the full TA-Lib indicator suite."""
+    return list(FULL_INDICATOR_SPECS)

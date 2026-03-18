@@ -23,12 +23,59 @@ _PROMPT_TEMPLATE_PATH = Path(__file__).with_name("setup_prompt_template.md")
 _SCHEMA_PATH = Path(__file__).with_name("setup_action_schema.json")
 
 
+def _find_mcp_config() -> str | None:
+    """Locate the .mcp.json config for arena MCP tools."""
+    import os
+    candidates = [
+        os.environ.get("ARENA_ROOT"),
+        os.environ.get("ARENA_HOME"),
+        str(Path.cwd()),
+        str(Path(__file__).resolve().parent.parent.parent),  # arena repo root
+    ]
+    for base in candidates:
+        if base:
+            path = Path(base) / ".mcp.json"
+            if path.exists():
+                return str(path)
+    return None
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """Extract the first top-level JSON object from mixed text/markdown output."""
+    # Try to find a fenced block first
+    import re
+    fence_match = re.search(r"```(?:json)?\s*\n(\{.*?\})\s*\n```", text, re.DOTALL)
+    if fence_match:
+        try:
+            return json.loads(fence_match.group(1))
+        except json.JSONDecodeError:
+            pass
+    # Scan for first { and match braces
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
 @dataclass
 class SetupDecision:
     action: str  # "update" or "hold"
     overrides: dict[str, Any] | None
     reason: str
     restart_runtime: bool
+    next_check_seconds: int | None = None  # LLM-controlled poll interval
+    chat_message: str | None = None  # optional message to competition chat
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -36,6 +83,8 @@ class SetupDecision:
             "overrides": self.overrides,
             "reason": self.reason,
             "restart_runtime": self.restart_runtime,
+            "next_check_seconds": self.next_check_seconds,
+            "chat_message": self.chat_message,
         }
 
 
@@ -46,11 +95,13 @@ class SetupAgent:
         self,
         backend: str = "auto",
         model: str | None = None,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
+        mcp_config_path: str | None = None,
     ):
         self.backend = backend
         self.model = model
         self.timeout = timeout
+        self.mcp_config_path = mcp_config_path or _find_mcp_config()
         self._resolved_backend = resolve_backend(backend, None)
         self._prompt_template = Template(
             _PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -100,10 +151,12 @@ class SetupAgent:
             "-p",
             "--no-session-persistence",
             "--output-format", "json",
-            "--json-schema", self._schema_text,
         ]
         if self.model:
             command.extend(["--model", self.model])
+        if self.mcp_config_path:
+            command.extend(["--mcp-config", self.mcp_config_path])
+            command.extend(["--allowedTools", "mcp__arena__*"])
         return self._exec_subprocess(command, prompt, "claude")
 
     def _run_gemini(self, prompt: str) -> dict[str, Any]:
@@ -196,8 +249,11 @@ class SetupAgent:
 
         try:
             payload = json.loads(result_text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"{backend_name} result is not valid JSON: {result_text[:500]}") from exc
+        except json.JSONDecodeError:
+            # Claude may return reasoning text before/after JSON — extract it
+            payload = _extract_json_object(result_text)
+            if payload is None:
+                raise ValueError(f"{backend_name} result is not valid JSON: {result_text[:500]}")
         if not isinstance(payload, dict):
             raise ValueError(f"{backend_name} payload must be an object, got: {payload!r}")
         return payload
@@ -207,9 +263,21 @@ class SetupAgent:
         action = str(payload.get("action", "hold")).lower()
         if action not in ("update", "hold"):
             action = "hold"
+        # Parse next_check_seconds, clamp to 60-3600
+        next_check = payload.get("next_check_seconds")
+        if next_check is not None:
+            try:
+                next_check = max(60, min(3600, int(next_check)))
+            except (TypeError, ValueError):
+                next_check = None
+        chat_msg = payload.get("chat_message")
+        if chat_msg is not None:
+            chat_msg = str(chat_msg).strip() or None
         return SetupDecision(
             action=action,
             overrides=payload.get("overrides") if action == "update" else None,
             reason=str(payload.get("reason", "no reason")),
             restart_runtime=bool(payload.get("restart_runtime", False)),
+            next_check_seconds=next_check,
+            chat_message=chat_msg,
         )

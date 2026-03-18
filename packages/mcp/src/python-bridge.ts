@@ -41,10 +41,18 @@ export class PythonBridge {
 
   async callTool(
     name: string,
-    args: Record<string, unknown> = {}
+    args: Record<string, unknown> = {},
+    options?: { timeout?: number }
   ): Promise<unknown> {
     await this.connect();
-    const result = await this.client!.callTool({ name, arguments: args });
+    const requestOptions = options?.timeout
+      ? { timeout: options.timeout }
+      : undefined;
+    const result = await this.client!.callTool(
+      { name, arguments: args },
+      undefined,
+      requestOptions
+    );
     // MCP callTool returns { content: [...] }
     // Extract the text/json content
     if (result.content && Array.isArray(result.content)) {

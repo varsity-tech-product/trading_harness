@@ -1,9 +1,8 @@
-"""Versioned signal-state feature engine with optional TA-Lib backend."""
+"""Versioned signal-state feature engine backed by TA-Lib."""
 
 from __future__ import annotations
 
 import math
-import statistics
 import time
 from typing import Any
 
@@ -57,14 +56,14 @@ def resolve_indicator_specs(
     """Resolve which indicators to compute based on policy config.
 
     Modes:
-      - ``"full"``    — all builtin indicators (+ TA-Lib curated if available).
+      - ``"full"``    — all curated TA-Lib indicators.
       - ``"custom"``  — use ``policy.signal_indicators`` list.
       - (default)     — use *fallback_specs* (top-level ``signal_indicators``).
     """
     mode = str(policy_config.get("indicator_mode", "")).lower()
 
     if mode == "full":
-        return [FeatureSpec.from_mapping(s) for s in get_full_indicator_specs(include_talib=True)]
+        return [FeatureSpec.from_mapping(s) for s in get_full_indicator_specs()]
 
     if mode == "custom":
         raw = policy_config.get("signal_indicators", [])
@@ -77,7 +76,7 @@ class FeatureEngine:
     def __init__(self, feature_specs: list[FeatureSpec] | None = None) -> None:
         self.feature_specs = list(feature_specs or [])
         self._talib = _load_talib_backend()
-        self.backend_name = "talib" if self._talib is not None else "builtin"
+        self.backend_name = "talib"
 
     def compute(self, candles: list[Candle]) -> SignalState:
         if not self.feature_specs:
@@ -136,21 +135,17 @@ class FeatureEngine:
     def _compute_one(self, spec: FeatureSpec, series: dict[str, list[float]]) -> Any:
         indicator = normalize_indicator_name(spec.indicator)
         params = normalize_params(spec.params)
-        if self._talib is not None:
-            # MAVP: auto-construct the periods array if not supplied
-            if indicator == "MAVP" and "periods" not in params:
-                params = {**params}
-                params["periods"] = _build_mavp_periods(
-                    series, params, self._talib
-                )
-            ok, unsupported = indicator_requires_supported_inputs(indicator, params)
-            if not ok:
-                raise ValueError(
-                    f"Indicator '{indicator}' requires unsupported inputs: {', '.join(unsupported)}. "
-                    "Provide those extra series inputs in the indicator params."
-                )
-            return _compute_talib(self._talib, indicator, params, series, spec.key)
-        return _compute_builtin(indicator, params, series)
+        # MAVP: auto-construct the periods array if not supplied
+        if indicator == "MAVP" and "periods" not in params:
+            params = {**params}
+            params["periods"] = _build_mavp_periods(series, params, self._talib)
+        ok, unsupported = indicator_requires_supported_inputs(indicator, params)
+        if not ok:
+            raise ValueError(
+                f"Indicator '{indicator}' requires unsupported inputs: {', '.join(unsupported)}. "
+                "Provide those extra series inputs in the indicator params."
+            )
+        return _compute_talib(self._talib, indicator, params, series, spec.key)
 
     def _spec_metadata(self, spec: FeatureSpec) -> dict[str, Any]:
         indicator = normalize_indicator_name(spec.indicator)
@@ -169,18 +164,12 @@ class FeatureEngine:
 
 
 def _load_talib_backend():
-    try:
-        from talib import abstract as talib_abstract  # type: ignore
-    except Exception:
-        return None
+    from talib import abstract as talib_abstract  # type: ignore
     return talib_abstract
 
 
 def _compute_talib(talib_abstract, indicator: str, params: dict[str, Any], series: dict[str, list[float]], explicit_key: str | None) -> Any:
-    try:
-        import numpy as np
-    except ModuleNotFoundError as exc:  # pragma: no cover - talib environment dependency
-        raise RuntimeError("TA-Lib backend requires numpy in the current environment.") from exc
+    import numpy as np
 
     function = getattr(talib_abstract, indicator, None)
     if function is None:
@@ -198,36 +187,6 @@ def _compute_talib(talib_abstract, indicator: str, params: dict[str, Any], serie
             for name, item in zip(output_names, result)
         }
     return _last_value(result)
-
-
-def _compute_builtin(indicator: str, params: dict[str, Any], series: dict[str, list[float]]) -> Any:
-    if indicator == "SMA":
-        return _sma(series["close"], int(params.get("timeperiod", 14)))
-    if indicator == "EMA":
-        return _ema(series["close"], int(params.get("timeperiod", 14)))
-    if indicator == "RSI":
-        return _rsi(series["close"], int(params.get("timeperiod", 14)))
-    if indicator == "MACD":
-        fast = int(params.get("fastperiod", 12))
-        slow = int(params.get("slowperiod", 26))
-        signal = int(params.get("signalperiod", 9))
-        macd_line, signal_line, hist = _macd(series["close"], fast, slow, signal)
-        return {"macd": macd_line, "signal": signal_line, "hist": hist}
-    if indicator == "BBANDS":
-        period = int(params.get("timeperiod", 20))
-        up = float(params.get("nbdevup", 2.0))
-        dn = float(params.get("nbdevdn", 2.0))
-        upper, middle, lower = _bbands(series["close"], period, up, dn)
-        return {"upper": upper, "middle": middle, "lower": lower}
-    if indicator == "ATR":
-        return _atr(series["high"], series["low"], series["close"], int(params.get("timeperiod", 14)))
-    if indicator == "OBV":
-        return _obv(series["close"], series["volume"])
-    if indicator == "RETURNS":
-        return _returns(series["close"], int(params.get("timeperiod", 1)))
-    if indicator == "VOLATILITY":
-        return _volatility(series["close"], int(params.get("timeperiod", 20)))
-    raise ValueError(f"Indicator '{indicator}' is not supported by the builtin feature engine.")
 
 
 def _value_is_ready(value: Any) -> bool:
@@ -334,119 +293,3 @@ def _build_mavp_periods(
 
     periods = np.clip(np.round(periods), min_p, max_p).astype(float)
     return periods.tolist()
-
-
-
-    if len(values) < period:
-        return None
-    window = values[-period:]
-    return sum(window) / period
-
-
-def _ema(values: list[float], period: int) -> float | None:
-    if len(values) < period:
-        return None
-    multiplier = 2 / (period + 1)
-    ema = sum(values[:period]) / period
-    for value in values[period:]:
-        ema = (value - ema) * multiplier + ema
-    return ema
-
-
-def _rsi(values: list[float], period: int) -> float | None:
-    if len(values) <= period:
-        return None
-    gains = []
-    losses = []
-    for previous, current in zip(values, values[1:]):
-        change = current - previous
-        gains.append(max(change, 0.0))
-        losses.append(abs(min(change, 0.0)))
-    average_gain = sum(gains[:period]) / period
-    average_loss = sum(losses[:period]) / period
-    for index in range(period, len(gains)):
-        average_gain = ((average_gain * (period - 1)) + gains[index]) / period
-        average_loss = ((average_loss * (period - 1)) + losses[index]) / period
-    if math.isclose(average_loss, 0.0):
-        return 100.0
-    rs = average_gain / average_loss
-    return 100 - (100 / (1 + rs))
-
-
-def _macd(values: list[float], fast_period: int, slow_period: int, signal_period: int) -> tuple[float | None, float | None, float | None]:
-    if len(values) < slow_period + signal_period:
-        return None, None, None
-    macd_series = []
-    for index in range(len(values)):
-        subset = values[: index + 1]
-        fast = _ema(subset, fast_period)
-        slow = _ema(subset, slow_period)
-        macd_series.append(None if fast is None or slow is None else fast - slow)
-    clean_macd = [value for value in macd_series if value is not None]
-    signal = _ema(clean_macd, signal_period)
-    macd_value = clean_macd[-1] if clean_macd else None
-    hist = None if macd_value is None or signal is None else macd_value - signal
-    return macd_value, signal, hist
-
-
-def _bbands(values: list[float], period: int, nbdev_up: float, nbdev_down: float) -> tuple[float | None, float | None, float | None]:
-    if len(values) < period:
-        return None, None, None
-    window = values[-period:]
-    middle = sum(window) / period
-    deviation = statistics.pstdev(window) if len(window) > 1 else 0.0
-    return middle + nbdev_up * deviation, middle, middle - nbdev_down * deviation
-
-
-def _atr(highs: list[float], lows: list[float], closes: list[float], period: int) -> float | None:
-    if len(highs) <= period or len(lows) <= period or len(closes) <= period:
-        return None
-    true_ranges = []
-    for index in range(1, len(closes)):
-        tr = max(
-            highs[index] - lows[index],
-            abs(highs[index] - closes[index - 1]),
-            abs(lows[index] - closes[index - 1]),
-        )
-        true_ranges.append(tr)
-    if len(true_ranges) < period:
-        return None
-    atr = sum(true_ranges[:period]) / period
-    for tr in true_ranges[period:]:
-        atr = ((atr * (period - 1)) + tr) / period
-    return atr
-
-
-def _obv(closes: list[float], volumes: list[float]) -> float | None:
-    if not closes or len(closes) != len(volumes):
-        return None
-    obv = 0.0
-    for previous, current, volume in zip(closes, closes[1:], volumes[1:]):
-        if current > previous:
-            obv += volume
-        elif current < previous:
-            obv -= volume
-    return obv
-
-
-def _returns(closes: list[float], period: int) -> float | None:
-    if len(closes) <= period:
-        return None
-    previous = closes[-(period + 1)]
-    if math.isclose(previous, 0.0):
-        return None
-    return (closes[-1] - previous) / previous
-
-
-def _volatility(closes: list[float], period: int) -> float | None:
-    if len(closes) <= period:
-        return None
-    window = closes[-(period + 1) :]
-    returns = []
-    for previous, current in zip(window, window[1:]):
-        if math.isclose(previous, 0.0):
-            continue
-        returns.append((current - previous) / previous)
-    if len(returns) < 2:
-        return None
-    return statistics.pstdev(returns)
