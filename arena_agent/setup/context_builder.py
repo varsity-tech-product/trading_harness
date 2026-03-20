@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import varsity_tools
@@ -94,9 +95,18 @@ def build_setup_context(
 
     # Current config snapshot — include policy type for cooldown awareness
     policy_config = config.get("policy", {})
+    strategy_start_time = config.get("_strategy_start_time")
+    strategy_start_trades = config.get("_strategy_start_trade_count", 0)
+    strategy_age_seconds = round(time.time() - strategy_start_time) if strategy_start_time else None
+
+    context["current_strategy"] = {
+        "policy": policy_config.get("type", "unknown"),
+        "params": policy_config.get("params", {}),
+        "age_seconds": strategy_age_seconds,
+        "age_minutes": round(strategy_age_seconds / 60, 1) if strategy_age_seconds else None,
+        "last_check_interval": config.get("_last_next_check_seconds"),
+    }
     context["current_config"] = {
-        "policy_type": policy_config.get("type", "unknown"),
-        "policy_params": policy_config.get("params", {}),
         "strategy": config.get("strategy", {}),
         "risk_limits": config.get("risk_limits", {}),
         "signal_indicators": config.get("signal_indicators", []),
@@ -104,9 +114,11 @@ def build_setup_context(
         "tick_interval_seconds": config.get("tick_interval_seconds", 30),
     }
 
-    # Recent trade performance (enhanced)
+    # Recent trade performance (enhanced, with per-strategy breakdown)
     try:
-        context["performance"] = _compute_performance(competition_id)
+        context["performance"] = _compute_performance(
+            competition_id, strategy_start_trades=strategy_start_trades,
+        )
     except Exception as exc:
         context["performance"] = {"error": str(exc)}
 
@@ -229,16 +241,8 @@ def _compute_market_summary(symbol: str, interval: str) -> dict[str, Any]:
     }
 
 
-def _compute_performance(competition_id: int) -> dict[str, Any]:
-    """Compute performance metrics from recent trades."""
-    try:
-        trades = varsity_tools.get_live_trades(competition_id)
-    except Exception:
-        return {"available": False}
-
-    if not isinstance(trades, list) or not trades:
-        return {"available": False, "trade_count": 0}
-
+def _summarize_trades(trades: list[dict]) -> dict[str, Any]:
+    """Compute summary stats for a list of trade dicts."""
     wins = 0
     losses = 0
     total_pnl = 0.0
@@ -259,7 +263,6 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
         elif pnl < 0:
             losses += 1
 
-        # Fees
         fee = float(trade.get("fee") or trade.get("commission") or 0)
         total_fees += fee
 
@@ -269,13 +272,11 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
             try:
                 hold_sec = float(hold_sec)
                 hold_times.append(hold_sec)
-                # Stopped out: negative PnL and held < 120s
                 if pnl < 0 and hold_sec < 120:
                     trades_stopped_out += 1
             except (TypeError, ValueError):
                 pass
         else:
-            # Fallback: compute from timestamps
             open_time = trade.get("openTime") or trade.get("entryTime")
             close_time = trade.get("closeTime") or trade.get("exitTime")
             if open_time is not None and close_time is not None:
@@ -295,7 +296,6 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
     avg_hold_seconds = sum(hold_times) / len(hold_times) if hold_times else 0
 
     return {
-        "available": True,
         "trade_count": len(pnls),
         "wins": wins,
         "losses": losses,
@@ -307,3 +307,36 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
         "trades_stopped_out": trades_stopped_out,
         "recent_pnls": [round(p, 4) for p in pnls[-10:]],
     }
+
+
+def _compute_performance(
+    competition_id: int,
+    strategy_start_trades: int = 0,
+) -> dict[str, Any]:
+    """Compute performance metrics from recent trades, with per-strategy breakdown."""
+    try:
+        trades = varsity_tools.get_live_trades(competition_id)
+    except Exception:
+        return {"available": False}
+
+    if not isinstance(trades, list) or not trades:
+        return {"available": False, "trade_count": 0}
+
+    # Overall performance
+    result = _summarize_trades(trades)
+    result["available"] = True
+
+    # Per-strategy performance (trades since last strategy change)
+    if strategy_start_trades > 0 and strategy_start_trades < len(trades):
+        strategy_trades = trades[strategy_start_trades:]
+        result["current_strategy_performance"] = _summarize_trades(strategy_trades)
+    elif strategy_start_trades == 0:
+        # No strategy change recorded — all trades are under current strategy
+        pass
+    else:
+        result["current_strategy_performance"] = {
+            "trade_count": 0, "wins": 0, "losses": 0, "win_rate": 0,
+            "total_pnl": 0, "avg_pnl": 0, "total_fees": 0,
+        }
+
+    return result

@@ -324,6 +324,10 @@ def _run_auto(argv: list[str]) -> None:
                 if new_policy_type and new_policy_type != old_policy_type:
                     log.info("Policy type changed: %s -> %s — replacing policy dict", old_policy_type, new_policy_type)
                     config_dict["policy"] = decision.overrides.pop("policy")
+                    # Track strategy change for per-strategy performance
+                    acct = context.get("account_state", {})
+                    config_dict["_strategy_start_trade_count"] = acct.get("trade_count", 0) if isinstance(acct, dict) else 0
+                    config_dict["_strategy_start_time"] = time.time()
                 _deep_merge(config_dict, decision.overrides)
                 # Log the effective policy type after merge
                 eff_policy = config_dict.get("policy", {})
@@ -341,6 +345,7 @@ def _run_auto(argv: list[str]) -> None:
                 except Exception as exc:
                     log.warning("Failed to send chat: %s", exc)
             next_check = decision.next_check_seconds or args.setup_interval
+            config_dict["_last_next_check_seconds"] = next_check
         except Exception as exc:
             log.warning("Setup agent failed: %s — using defaults", exc)
             next_check = args.setup_interval
