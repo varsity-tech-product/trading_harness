@@ -77,60 +77,89 @@ Notes:
   - `arena_agent/agents/prompt_template.md`
   - `arena_agent/agents/action_schema.json`
   - `arena_agent/config/codex_agent_config.yaml`
-- LLM-powered setup agent:
-  - calls MCP tools for live data, decides config overrides for the runtime agent
-  - `arena_agent/agents/setup_agent.py`
-  - `arena_agent/agents/setup_prompt_template.md`
-  - `arena_agent/setup/context_builder.py` (account, PnL, leaderboard, market)
+- LLM-powered setup agent (strategy manager):
+  - analyzes market + performance context, picks rule policy + params via flat schema
+  - strategy change cooldown (20 min / 5 trades) prevents thrashing
+  - per-strategy performance tracking (separate from overall stats)
+  - `arena_agent/agents/setup_agent.py` (decision parsing, cooldown, flat→config translation)
+  - `arena_agent/agents/setup_action_schema.json` (flat schema: policy, tp_pct, sl_pct, sizing_fraction, direction_bias)
+  - `arena_agent/agents/setup_prompt_template.md` (layered prompt with per-strategy stats)
+  - `arena_agent/setup/context_builder.py` (account, PnL, fees, hold times, multi-timeframe market)
   - `arena_agent/setup/memory.py` (cross-competition learning)
 - Auto mode (`arena-agent-runtime auto`):
-  - continuous loop: setup agent → deep-merge overrides → runtime agent for N iterations → repeat
-  - setup agent controls strategy, risk limits, extra instructions, interval, tick rate
-  - runtime agent handles per-tick trade decisions and execution
+  - continuous loop: setup agent picks rule policy → deterministic runtime executes → repeat
+  - setup agent controls policy type, params, TP/SL%, sizing%, direction bias
+  - runtime uses rule policies (no per-tick LLM calls), strategy layer handles sizing/TP/SL/exits
+  - naked order protection: action demoted to HOLD if strategy refine fails
 - Terminal monitor:
   - `arena_agent/tui/`
   - `.venv/bin/python -m arena_agent monitor`
 
 ## Current architecture
 
-The system runs as a two-level agent loop:
+The system uses a **setup agent → rule policy** architecture. The LLM (setup agent) picks the strategy; a deterministic rule policy executes it. No per-tick LLM calls.
 
 ```
-┌────────────────────────────────────────────────┐
-│              Auto Loop (__main__.py)            │
-│                                                │
-│  ┌──────────┐  overrides   ┌──────────────┐   │
-│  │  Setup   │─────────────→│ Config Dict  │   │
-│  │  Agent   │  deep-merge  │  (mutable)   │   │
-│  │ (claude) │              └──────┬───────┘   │
-│  │ +MCP     │                     │            │
-│  └──────────┘           RuntimeConfig          │
-│       ↑                        │               │
-│       │ next_check_seconds     ▼               │
-│       │                ┌──────────────┐        │
-│       └────────────────│   Runtime    │        │
-│                        │   Agent     │        │
-│                        │ (N iters)   │        │
-│                        │  → trade    │        │
-│                        └──────────────┘        │
-└────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                 Auto Loop (__main__.py)                   │
+│                                                          │
+│  ┌──────────┐  flat decision   ┌──────────────┐         │
+│  │  Setup   │─────────────────→│ Config Dict  │         │
+│  │  Agent   │  (policy,tp/sl,  │  (mutable)   │         │
+│  │ (LLM)   │   sizing,bias)   └──────┬───────┘         │
+│  │ +MCP     │                        │                   │
+│  └──────────┘              RuntimeConfig                 │
+│       ↑                          │                       │
+│       │ every 5-20 min           ▼                       │
+│       │                  ┌──────────────┐                │
+│       │                  │ Rule Policy  │ deterministic  │
+│       │                  │ (ma_crossover│ 30s ticks      │
+│       │                  │  rsi_revert  │ no LLM calls   │
+│       │                  │  ch_breakout │                 │
+│       │                  │  ensemble)   │                 │
+│       │                  └──────┬───────┘                │
+│       │                         │                        │
+│       │                  ┌──────▼───────┐                │
+│       │                  │ Strategy     │                │
+│       │                  │ Layer        │                │
+│       │                  │ (sizing,     │                │
+│       │                  │  TP/SL,      │                │
+│       │                  │  exit rules) │                │
+│       │                  └──────┬───────┘                │
+│       │                         │                        │
+│       │  context + performance  │ execute                │
+│       └─────────────────────────┘                        │
+└──────────────────────────────────────────────────────────┘
 ```
 
-**Setup agent** (outer loop): calls MCP tools for live data (orderbook, klines, leaderboard, positions), analyzes performance, and produces config overrides — strategy params, risk limits, extra instructions for the runtime agent.
+**Setup agent** (outer loop, every 5-20 min):
+- Receives context: price, equity, PnL, fees, win rate, per-strategy performance, multi-timeframe trends
+- Returns a flat decision: policy type, params, TP/SL percentages, sizing fraction, direction bias
+- Uses MCP tools for deeper market analysis when needed
+- Strategy change cooldown: 20 min or 5 trades minimum between changes (enforced server-side)
+- Backends: Claude, Codex, Gemini, OpenClaw
 
-**Runtime agent** (inner loop, per tick):
+**Rule policy** (inner loop, per tick, deterministic):
+- `ma_crossover(fast_period, slow_period)` — trades SMA crossovers
+- `rsi_mean_reversion(rsi_period, oversold, overbought, exit_level)` — trades RSI extremes
+- `channel_breakout(lookback)` — trades price channel breakouts
+- `ensemble([policies...])` — first non-HOLD signal wins
 
-1. Build `AgentState` from Arena data.
-2. Ask a policy for an `Action`.
-3. Execute that action with risk checks.
-4. Build the next state.
-5. Persist a neutral `TransitionEvent`.
+**Strategy layer** (applied to every trade action):
+- Sizing: `fixed_fraction` of equity (setup agent controls the percentage)
+- TP/SL: `fixed_pct` from entry price (setup agent controls the percentages)
+- Entry filters: trade budget enforcement
+- Exit rules: trailing stop, drawdown exit
+- Safety: if strategy refine fails, action demoted to HOLD (no naked orders)
 
-Both agents receive full account state (balance, equity, unrealized/realized PnL, trade count) and position data each cycle.
-
-The runtime does not own reward logic. If an agent wants a scalar objective, it can derive one from transitions in `arena_agent/agents/reward_models.py`.
-
-The runtime owns a versioned `signal_state` contract. Agents can request indicator bundles, and the framework computes them centrally through the TA-Lib feature engine.
+**Key design decisions:**
+- The LLM never sees internal config nesting — it uses a flat schema with percentages
+- The LLM never places trades directly — it configures a rule engine
+- Per-strategy performance is tracked separately from overall stats
+- Direction bias (long_only/short_only/both) is enforced at the risk limits level
+- `--agent claude/codex/gemini` selects the setup agent backend; the runtime always uses rule policies
+- `--agent auto` in auto mode defaults to rule policy; the setup agent picks which one
+- Backward compatible: `--agent claude` in `run` mode still uses `agent_exec` with per-tick LLM calls
 
 Indicator support:
 
@@ -427,36 +456,53 @@ That makes the state contract and action contract explicit for any CLI-backed ag
 
 ## Auto Mode (Setup + Runtime Loop)
 
-The `auto` subcommand runs the full setup → control → runtime loop:
+The `auto` subcommand runs the full setup → rule policy → runtime loop:
 
 ```bash
 arena-agent-runtime auto --competition-id 9 --agent claude --setup-interval 300
 ```
 
 Each cycle:
-1. **Setup agent** calls MCP tools, analyzes account/market/performance, returns config overrides
-2. Overrides are deep-merged into the live config dict (strategy, risk limits, extra instructions, interval)
-3. **Runtime agent** runs for N iterations (N = setup_interval / tick_interval)
-4. Loop back to step 1
+1. **Setup agent** (LLM) analyzes context and returns a flat decision: policy, params, TP/SL%, sizing%, direction bias
+2. Decision is translated to internal config and applied (policy dict replaced on type change, rest deep-merged)
+3. **Rule policy** runs for N deterministic iterations (N = next_check_seconds / tick_interval)
+4. Strategy layer applies sizing, TP/SL, entry filters, and exit rules to every trade
+5. Loop back to step 1
+
+The setup agent uses a flat, percentage-based schema — no nested config paths:
+
+```json
+{
+  "action": "update",
+  "policy": "rsi_mean_reversion",
+  "policy_params": {"rsi_period": 14, "oversold": 30, "overbought": 70},
+  "tp_pct": 1.2,
+  "sl_pct": 0.5,
+  "sizing_fraction": 8,
+  "direction_bias": "short_only",
+  "reason": "bearish trend, switching to RSI extremes",
+  "next_check_seconds": 1200
+}
+```
+
+Guardrails:
+- **Strategy cooldown**: 20 min or 5 trades between changes (bypassed only on >3% drawdown)
+- **Bounds enforcement**: tp_pct [0.1-5.0], sl_pct [0.1-3.0], sizing [1-20]%
+- **Naked order protection**: if strategy.refine() fails, action demoted to HOLD
+- **Per-strategy performance**: setup agent sees stats for the current strategy, not just overall
 
 Options:
 
 ```bash
 --competition-id <id>         # Required
 --agent <backend>             # claude, gemini, openclaw, codex, auto
---model <model>               # Model for runtime agent
---setup-model <model>         # Model for setup agent (defaults to --model)
+--model <model>               # Model for setup agent
+--setup-model <model>         # Model override for setup agent
 --setup-interval <seconds>    # Default seconds between setup checks (default: 300)
 --timeout-seconds <seconds>   # Decision timeout (default: 120)
 --config <path>               # Base YAML config
 --dry-run                     # Dry run mode (no real trades)
 ```
-
-The setup agent can override:
-- `policy.extra_instructions` — per-tick instructions for the runtime agent
-- `strategy.sizing`, `strategy.tpsl` — position sizing and TP/SL strategy
-- `risk_limits` — trade limits, position size limits, cooldowns
-- `interval`, `tick_interval_seconds` — candle and polling intervals
 
 ## Terminal Observability Monitor
 
