@@ -7,6 +7,7 @@ import signal
 import time
 
 from arena_agent.agents.rule_agent import build_policy
+from arena_agent.interfaces.action_schema import Action
 from arena_agent.core.environment_adapter import EnvironmentAdapter
 from arena_agent.core.models import RuntimeConfig, RuntimeReport, TransitionEvent, TransitionMetrics
 from arena_agent.core.runtime_safety import detect_position_drift, evaluate_state_guard
@@ -201,8 +202,15 @@ class MarketRuntime:
                         action = self.strategy.refine(action, state)
                     except (TypeError, ValueError) as strat_exc:
                         self.logger.warning(
-                            "Strategy refine failed (using raw action): %s", strat_exc
+                            "Strategy refine failed: %s", strat_exc
                         )
+                        # Demote to HOLD — never send an order without TP/SL protection
+                        if not action.is_hold:
+                            self.logger.warning(
+                                "Demoting %s to HOLD — strategy refine failed, no TP/SL on order",
+                                action.type,
+                            )
+                            action = Action.hold(reason=f"strategy_refine_failed: {strat_exc}")
                 decisions += 1
                 self.monitor.record_decision(
                     iteration=iterations,
