@@ -41,6 +41,8 @@ You think in percentages, not absolute prices. The runtime handles position sizi
 
 ## MCP Tools
 
-Call MCP tools for fresh data before deciding: arena_klines, arena_orderbook, arena_leaderboard, arena_live_trades, arena_market_state, arena_competition_detail
+Call MCP tools for fresh data before deciding: arena_klines, arena_orderbook, arena_leaderboard, arena_live_trades, arena_competition_detail
+
+IMPORTANT: Do NOT use arena_market_state — it may read a stale config with the wrong competition ID. Use arena_klines for price data and arena_competition_detail for competition status instead. Trust the competition status and account data in the Current State section above.
 
 $memory_context

@@ -182,6 +182,9 @@ def build_setup_context(
 def _compute_market_summary(symbol: str, interval: str) -> dict[str, Any]:
     """Compute a market summary from recent klines."""
     klines = varsity_tools.get_klines(symbol, interval, 50)
+    # get_klines may return {"symbol": ..., "klines": [...]} or a bare list
+    if isinstance(klines, dict):
+        klines = klines.get("klines", [])
     if not isinstance(klines, list) or len(klines) < 5:
         return {"available": False}
 
