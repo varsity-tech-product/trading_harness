@@ -211,7 +211,7 @@ class CodexBackendTest(unittest.TestCase):
         self.assertAlmostEqual(result.metadata["confidence"], 0.82)
         self.assertIn('"recent_transitions"', captured["input"])
         self.assertIn('"last_action": "HOLD"', captured["input"])
-        self.assertIn('"strategy_context": "momentum"', captured["input"])
+        self.assertIn("Strategy context:\nmomentum", captured["input"])
         self.assertIn("Action schema JSON:", captured["input"])
         self.assertIn("Additional policy instructions:", captured["input"])
         self.assertIn("BEGIN_UNTRUSTED_DATA", captured["input"])

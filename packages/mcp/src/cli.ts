@@ -54,6 +54,7 @@ import {
   writeArenaEnvFile,
   writeArenaHomeState,
   writeManagedConfigs,
+  writeMcpConfig,
 } from "./util/home.js";
 import {
   clearRuntimeState,
@@ -327,6 +328,7 @@ async function initManagedHome(): Promise<void> {
   });
   writeArenaEnvFile(home, apiKey);
   writeManagedConfigs(home, state, { overwrite: true });
+  writeMcpConfig(home);
   writeArenaHomeState(home, state);
 
   console.log("\nBootstrapping Python runtime...");

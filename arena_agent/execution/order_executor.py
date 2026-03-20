@@ -150,6 +150,13 @@ class OrderExecutor:
             return "no open position to close"
         if action.type == ActionType.UPDATE_TPSL and state.position is None:
             return "cannot update TP/SL without an open position"
+        # Rate-limit ALL trade actions (open AND close) to prevent rapid-fire
+        # trade loops (e.g. close→open→close burning through the trade budget).
+        if action.type in {ActionType.OPEN_LONG, ActionType.OPEN_SHORT, ActionType.CLOSE_POSITION}:
+            if self.risk_limits.min_seconds_between_trades > 0:
+                elapsed = time.time() - self._last_trade_time
+                if elapsed < self.risk_limits.min_seconds_between_trades:
+                    return "trade cooldown active"
         if action.type in {ActionType.OPEN_LONG, ActionType.OPEN_SHORT}:
             if action.size is None and not self._can_auto_size(state):
                 return "market price unavailable for sizing"
@@ -157,10 +164,6 @@ class OrderExecutor:
                 return "competition is in close-only mode"
             if state.competition.max_trades_remaining is not None and state.competition.max_trades_remaining <= 0:
                 return "trade limit reached"
-            if self.risk_limits.min_seconds_between_trades > 0:
-                elapsed = time.time() - self._last_trade_time
-                if elapsed < self.risk_limits.min_seconds_between_trades:
-                    return "trade cooldown active"
         return None
 
     def _resolve_size(self, action: Action, state: AgentState) -> float:
@@ -222,4 +225,21 @@ def _extract_float(data: dict[str, Any], *keys: str, default: float = 0.0) -> fl
                 return float(data[key])
             except (TypeError, ValueError):
                 return default
+    # Check nested fills for commission aggregation (common venue response format)
+    fills = data.get("fills") or data.get("orderFills")
+    if isinstance(fills, list):
+        total = 0.0
+        found = False
+        for fill in fills:
+            if isinstance(fill, dict):
+                for key in ("commission", "fee"):
+                    val = fill.get(key)
+                    if val is not None:
+                        try:
+                            total += abs(float(val))
+                            found = True
+                        except (TypeError, ValueError):
+                            pass
+        if found:
+            return total
     return default

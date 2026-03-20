@@ -209,6 +209,7 @@ class MarketRuntime:
                     action=action,
                     policy_name=getattr(self.policy, "name", "unknown"),
                     latency_seconds=decision_latency,
+                    llm_usage=action.metadata.get("llm_usage"),
                 )
                 execution_result = self.executor.execute(action, state)
                 if execution_result.executed:
@@ -248,6 +249,7 @@ class MarketRuntime:
                         "execution_result": to_jsonable(execution_result),
                         "metrics": to_jsonable(transition.metrics),
                         "equity_after": next_state.account.equity,
+                        "llm_usage": action.metadata.get("llm_usage"),
                     },
                 )
 
@@ -261,6 +263,20 @@ class MarketRuntime:
                     transition.metrics.equity_delta,
                     next_state.account.equity,
                 )
+
+                llm_usage = action.metadata.get("llm_usage")
+                if llm_usage and isinstance(llm_usage, dict):
+                    parts = []
+                    if llm_usage.get("input_tokens") is not None:
+                        parts.append(f"in={llm_usage['input_tokens']}")
+                    if llm_usage.get("output_tokens") is not None:
+                        parts.append(f"out={llm_usage['output_tokens']}")
+                    if llm_usage.get("cost_usd") is not None:
+                        parts.append(f"cost=${llm_usage['cost_usd']}")
+                    if llm_usage.get("duration_ms") is not None:
+                        parts.append(f"duration={llm_usage['duration_ms']}ms")
+                    if parts:
+                        self.logger.info("LLM usage | %s", " ".join(parts))
 
                 if next_state.competition.time_remaining_seconds is not None and next_state.competition.time_remaining_seconds <= 0:
                     self.logger.info("Competition time exhausted; stopping runtime.")

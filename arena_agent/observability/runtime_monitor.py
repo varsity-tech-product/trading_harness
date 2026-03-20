@@ -265,6 +265,7 @@ class RuntimeMonitor:
         action: Any,
         policy_name: str,
         latency_seconds: float | None = None,
+        llm_usage: dict[str, Any] | None = None,
     ) -> None:
         if not self.enabled:
             return
@@ -279,9 +280,26 @@ class RuntimeMonitor:
                 "action": action_payload,
                 "reason": action_payload.get("metadata", {}).get("reason"),
                 "confidence": action_payload.get("metadata", {}).get("confidence"),
+                "llm_usage": llm_usage,
             }
             health["last_decision_timestamp"] = time.time()
             health["decision_latency_seconds"] = _optional_float(latency_seconds)
+
+            # Accumulate LLM usage totals
+            if llm_usage and isinstance(llm_usage, dict):
+                totals = self._snapshot.setdefault("llm_usage_totals", {
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                    "total_cost_usd": 0.0,
+                    "decisions_with_usage": 0,
+                })
+                totals["decisions_with_usage"] += 1
+                if llm_usage.get("input_tokens") is not None:
+                    totals["total_input_tokens"] += int(llm_usage["input_tokens"])
+                if llm_usage.get("output_tokens") is not None:
+                    totals["total_output_tokens"] += int(llm_usage["output_tokens"])
+                if llm_usage.get("cost_usd") is not None:
+                    totals["total_cost_usd"] += float(llm_usage["cost_usd"])
         self._publish_snapshot()
 
     def record_transition(

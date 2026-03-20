@@ -87,6 +87,10 @@ _PARAM_ALIASES: dict[str, str] = {
     "rr_ratio": "reward_risk_ratio",
     "risk_reward_ratio": "reward_risk_ratio",
     "sl_mult": "sl_atr_mult",
+    # min_sl_pct aliases
+    "min_stop_loss_pct": "min_sl_pct",
+    "min_stoploss_pct": "min_sl_pct",
+    "min_sl_distance_pct": "min_sl_pct",
 }
 
 
@@ -131,7 +135,9 @@ def _build_component(registry: dict[str, type], config: dict[str, Any] | str | N
             params = kept
 
     try:
-        return cls(**params)
+        component = cls(**params)
+        component._builder_used_defaults = False
+        return component
     except TypeError as exc:
         # Remaining init failures — fall back to defaults
         valid = [f.name for f in dataclasses.fields(cls) if f.name != "name"] if dataclasses.is_dataclass(cls) else []
@@ -139,7 +145,10 @@ def _build_component(registry: dict[str, type], config: dict[str, Any] | str | N
             "Strategy component %s(%s) failed: %s. Valid params: %s. Using defaults.",
             type_name, params, exc, valid,
         )
-        return cls()
+        component = cls()
+        component._builder_used_defaults = True
+        component._builder_rejected_params = params
+        return component
 
 
 def build_sizer(config: dict[str, Any] | None) -> PositionSizer | None:

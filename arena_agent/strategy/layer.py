@@ -74,6 +74,19 @@ def get_indicator(state: AgentState, indicator: str, period: int | None = None) 
     return None
 
 
+def _component_params(component: Any) -> dict[str, Any]:
+    """Extract the actual parameter values from a strategy component for metadata."""
+    import dataclasses
+
+    if dataclasses.is_dataclass(component):
+        return {
+            f.name: getattr(component, f.name)
+            for f in dataclasses.fields(component)
+            if f.name != "name"
+        }
+    return {}
+
+
 # ---------------------------------------------------------------------------
 # StrategyLayer
 # ---------------------------------------------------------------------------
@@ -169,6 +182,8 @@ class StrategyLayer:
                 meta["strategy_sizing"] = sizer.name
                 meta["strategy_original_size"] = size
                 size = computed_size
+            if getattr(sizer, "_builder_used_defaults", False):
+                meta["strategy_sizing_used_defaults"] = True
 
         # Apply risk limits cap
         if self.risk_limits is not None and size is not None:
@@ -186,6 +201,10 @@ class StrategyLayer:
             if computed_sl is not None:
                 sl = computed_sl
             meta["strategy_tpsl"] = tpsl_placer.name
+            # Surface the actual params used so the LLM can see if defaults were applied
+            meta["strategy_tpsl_params"] = _component_params(tpsl_placer)
+            if getattr(tpsl_placer, "_builder_used_defaults", False):
+                meta["strategy_tpsl_used_defaults"] = True
 
         return Action(
             type=action.type,

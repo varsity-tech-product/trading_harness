@@ -13,6 +13,7 @@ import tempfile
 from typing import Any
 
 from arena_agent.agents.agent_exec_policy import (
+    _extract_usage,
     _strip_markdown_fences,
     resolve_backend,
 )
@@ -37,6 +38,16 @@ def _find_mcp_config() -> str | None:
             path = Path(base) / ".mcp.json"
             if path.exists():
                 return str(path)
+
+    # Check alongside the arena-mcp/arena-agent CLI binary (npm global install)
+    for cmd in ("arena-mcp", "arena-agent"):
+        bin_path = shutil.which(cmd)
+        if bin_path:
+            pkg_dir = Path(bin_path).resolve().parent.parent / "lib" / "node_modules" / "@varsity-arena" / "agent"
+            mcp_json = pkg_dir / ".mcp.json"
+            if mcp_json.exists():
+                return str(mcp_json)
+
     return None
 
 
@@ -231,6 +242,20 @@ class SetupAgent:
             if brace_depth <= 0:
                 break
         wrapper = json.loads("\n".join(json_lines))
+
+        # Log normalized LLM usage
+        usage = _extract_usage(wrapper, "openclaw")
+        if usage:
+            parts = []
+            if usage.get("input_tokens") is not None:
+                parts.append(f"in={usage['input_tokens']}")
+            if usage.get("output_tokens") is not None:
+                parts.append(f"out={usage['output_tokens']}")
+            if usage.get("cost_usd") is not None:
+                parts.append(f"cost=${usage['cost_usd']}")
+            if parts:
+                logger.info("setup_agent LLM usage | %s", " ".join(parts))
+
         payloads = wrapper.get("payloads", [])
         if payloads and isinstance(payloads[0], dict):
             result_text = str(payloads[0].get("text", "")).strip()
@@ -280,6 +305,21 @@ class SetupAgent:
             for key in ("usage", "stats", "cost_usd", "duration_ms", "num_turns"):
                 if key in wrapper:
                     logger.info("setup_agent %s: %s", key, wrapper[key])
+
+        # Log normalized LLM usage
+        usage = _extract_usage(wrapper, backend_name)
+        if usage:
+            parts = []
+            if usage.get("input_tokens") is not None:
+                parts.append(f"in={usage['input_tokens']}")
+            if usage.get("output_tokens") is not None:
+                parts.append(f"out={usage['output_tokens']}")
+            if usage.get("cost_usd") is not None:
+                parts.append(f"cost=${usage['cost_usd']}")
+            if usage.get("duration_ms") is not None:
+                parts.append(f"duration={usage['duration_ms']}ms")
+            if parts:
+                logger.info("setup_agent LLM usage | %s", " ".join(parts))
 
         if isinstance(wrapper, dict) and response_key in wrapper:
             result_text = str(wrapper[response_key]).strip()

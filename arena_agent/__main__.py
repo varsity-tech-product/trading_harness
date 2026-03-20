@@ -278,10 +278,19 @@ def _run_auto(argv: list[str]) -> None:
 
     arena_home = Path.cwd()
     memory = SetupMemory(arena_home / "setup_memory.json")
+
+    # Resolve MCP config for the setup agent
+    mcp_config = None
+    for candidate in [arena_home / ".mcp.json", Path.cwd() / ".mcp.json"]:
+        if candidate.exists():
+            mcp_config = str(candidate)
+            break
+
     setup_agent = SetupAgent(
         backend=policy["backend"],
         model=args.setup_model or args.model,
         timeout=args.timeout_seconds * 2,
+        mcp_config_path=mcp_config,
     )
 
     cycle = 0

@@ -155,6 +155,29 @@ export function writeArenaHomeState(home: string, state: ArenaHomeState): void {
   );
 }
 
+export function mcpConfigPath(home: string): string {
+  return resolve(home, ".mcp.json");
+}
+
+export function writeMcpConfig(home: string): void {
+  ensureArenaHomeDirectories(home);
+  const config = {
+    mcpServers: {
+      arena: {
+        type: "stdio",
+        command: "arena-mcp",
+        args: ["serve"],
+        env: { ARENA_HOME: home },
+      },
+    },
+  };
+  writeFileSync(
+    mcpConfigPath(home),
+    JSON.stringify(config, null, 2) + "\n",
+    "utf-8"
+  );
+}
+
 export function writeArenaEnvFile(home: string, apiKey: string): void {
   ensureArenaHomeDirectories(home);
   writeFileSync(
@@ -207,7 +230,22 @@ adapter_min_call_spacing_seconds: 0.0
 policy:
   type: agent_exec
   backend: auto
-  indicator_mode: full
+  indicator_mode: custom
+  signal_indicators:
+    - indicator: SMA
+      params: { timeperiod: 20 }
+    - indicator: SMA
+      params: { timeperiod: 50 }
+    - indicator: RSI
+      params: { timeperiod: 14 }
+    - indicator: ATR
+      params: { timeperiod: 14 }
+    - indicator: MACD
+    - indicator: BBANDS
+      params: { timeperiod: 20 }
+    - indicator: ADX
+      params: { timeperiod: 14 }
+    - indicator: OBV
   timeout_seconds: 120
   recent_transition_limit: 5
   fail_open_to_hold: true
@@ -215,8 +253,10 @@ policy:
   bootstrap_from_transition_log: true
   strategy_context: active_momentum
   extra_instructions: >-
-    All available technical indicators are pre-computed in the features section.
-    Use trend, momentum, volatility, and volume signals together.
+    A core set of indicators (SMA 20/50, RSI 14, ATR 14, MACD, BBANDS, ADX, OBV)
+    is pre-computed in the features section. If you need additional indicators,
+    include an "indicators" field in your action metadata with a list of
+    {"indicator": "NAME", "params": {...}} objects — they will appear next tick.
     Be decisive — prefer HOLD only when the signal is genuinely ambiguous.
     Do not HOLD for extended periods when flat with trades remaining.
     If flat for 5+ consecutive iterations, actively look for an entry.
@@ -233,7 +273,8 @@ strategy:
   tpsl:
     type: atr_multiple
     atr_tp_mult: 2.0
-    atr_sl_mult: 1.5
+    atr_sl_mult: 2.0
+    min_sl_pct: 0.005
   entry_filters:
     - type: trade_budget
       min_remaining_trades: 5

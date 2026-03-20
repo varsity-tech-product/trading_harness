@@ -31,12 +31,14 @@ Guidelines:
 - If TP/SL is too tight (frequent stop-outs), widen the ATR multipliers in strategy.tpsl
 - If there's a strong directional bias, add instructions for balanced direction
 - Consider remaining trades and competition time when adjusting risk
-- Use indicator_mode "full" unless you have a specific reason not to
+- The default indicator_mode is "custom" with a core set: SMA 20/50, RSI 14, ATR 14, MACD, BBANDS 20, ADX 14, OBV.
+  The runtime agent can request additional indicators dynamically via its action metadata.
+  Switch to "full" only if the agent needs many indicators simultaneously — it is heavier on compute
 - Overrides are deep-merged into the YAML config — only include fields you want to change
 - Set restart_runtime to true when changing policy, strategy, or indicators (the runtime needs to reload)
 - Set restart_runtime to false for changes that only affect the next setup cycle
 - Set next_check_seconds to control when you want to be consulted again (60-3600). Use shorter intervals (60-120) right after making changes to verify they work. Use longer intervals (300-600) when things are stable. Null uses the default poll interval.
-- Do NOT add signal_indicators unless you are switching indicator_mode to "custom". With "full" mode, all TA-Lib indicators are computed automatically.
+- You can add or replace signal_indicators when indicator_mode is "custom". The runtime agent can also request indicators dynamically.
 
 Available override paths:
 - policy.extra_instructions: string — instructions the runtime agent sees each tick
@@ -48,8 +50,9 @@ Available override paths:
     "risk_per_trade": { max_risk_pct: 0.01, fallback_atr_multiplier: 1.5 }  — max_risk_pct MUST be in [0.005, 0.03]
 - strategy.tpsl: { type, ... } — use ONLY these exact types and params:
     "fixed_pct": { tp_pct: 0.005, sl_pct: 0.003 }
-    "atr_multiple": { atr_tp_mult: 2.0, atr_sl_mult: 1.5 }
-    "r_multiple": { sl_atr_mult: 1.5, reward_risk_ratio: 2.0 }
+    "atr_multiple": { atr_tp_mult: 2.0, atr_sl_mult: 2.0, min_sl_pct: 0.005 }
+    "r_multiple": { sl_atr_mult: 1.5, reward_risk_ratio: 2.0, min_sl_pct: 0.005 }
+    min_sl_pct enforces a minimum SL distance as a % of price (0.005 = 0.5%). Prevents noise-level stops on short timeframes.
 - strategy.entry_filters: [ { type, ... }, ... ] — use ONLY these exact types and params:
     "volatility_gate": { min_volatility: 0.0, max_volatility: 1.0 }
     "trade_budget": { min_remaining_trades: 5 }

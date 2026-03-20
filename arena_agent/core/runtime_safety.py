@@ -25,6 +25,18 @@ def evaluate_state_guard(
     if not signal_state.requested:
         return StateGuardResult(ok=True)
 
+    # Block trading decisions during indicator warmup to prevent
+    # the LLM from acting on incomplete/garbage indicator values.
+    if not signal_state.warmup_complete:
+        return StateGuardResult(
+            ok=False,
+            reason="warmup_incomplete",
+            details={
+                "requested_features": len(signal_state.requested),
+                "warmup_complete": False,
+            },
+        )
+
     metadata = signal_state.metadata or {}
     raw_feature_timestamp = metadata.get("timestamp")
     if raw_feature_timestamp is None:

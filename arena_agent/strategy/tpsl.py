@@ -41,11 +41,14 @@ class ATRBasedTPSL:
     Short: TP = price - ATR * tp_mult,  SL = price + ATR * sl_mult
 
     Requires ATR in the indicator set.
+    ``min_sl_pct`` enforces a minimum SL distance as a fraction of price
+    to avoid noise-level stops on short timeframes.
     """
 
     atr_tp_mult: float = 2.0
     atr_sl_mult: float = 1.5
     atr_period: int | None = None
+    min_sl_pct: float = 0.003
     name: str = "atr_multiple"
 
     def compute(self, action: Action, state: AgentState) -> tuple[float | None, float | None]:
@@ -54,8 +57,16 @@ class ATRBasedTPSL:
             return None, None
 
         price = state.market.last_price
-        tp_offset = atr * self.atr_tp_mult
         sl_offset = atr * self.atr_sl_mult
+        tp_offset = atr * self.atr_tp_mult
+
+        # Enforce minimum SL distance to avoid noise-level stops
+        min_distance = price * self.min_sl_pct
+        if sl_offset < min_distance:
+            # Scale TP proportionally to maintain the TP/SL ratio
+            ratio = min_distance / sl_offset if sl_offset > 0 else 1.0
+            sl_offset = min_distance
+            tp_offset = tp_offset * ratio
 
         if action.type == ActionType.OPEN_LONG:
             return price + tp_offset, price - sl_offset
@@ -72,11 +83,13 @@ class RMultipleTPSL:
     TP distance = SL distance * reward_risk_ratio
 
     Requires ATR in the indicator set.
+    ``min_sl_pct`` enforces a minimum SL distance as a fraction of price.
     """
 
     sl_atr_mult: float = 1.5
     reward_risk_ratio: float = 2.0
     atr_period: int | None = None
+    min_sl_pct: float = 0.003
     name: str = "r_multiple"
 
     def compute(self, action: Action, state: AgentState) -> tuple[float | None, float | None]:
@@ -86,6 +99,11 @@ class RMultipleTPSL:
 
         price = state.market.last_price
         sl_distance = atr * self.sl_atr_mult
+
+        # Enforce minimum SL distance
+        min_distance = price * self.min_sl_pct
+        sl_distance = max(sl_distance, min_distance)
+
         tp_distance = sl_distance * self.reward_risk_ratio
 
         if action.type == ActionType.OPEN_LONG:
