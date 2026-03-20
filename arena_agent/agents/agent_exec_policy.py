@@ -40,6 +40,16 @@ def _strip_markdown_fences(text: str) -> str:
     return match.group(1).strip() if match else text.strip()
 
 
+def _find_fallback_backend(current: str) -> str | None:
+    """Find an alternative CLI backend available in PATH."""
+    # Preference order for fallback.
+    preference = ["claude", "gemini", "codex", "openclaw"]
+    for candidate in preference:
+        if candidate != current and shutil.which(candidate):
+            return candidate
+    return None
+
+
 def resolve_backend(backend: str, command: str | None) -> str:
     """Determine which CLI backend to use.
 
@@ -93,14 +103,20 @@ class AgentExecPolicy(Policy):
     openclaw_agent_id: str = "arena-trader"
     name: str = "agent_exec"
     subprocess_runner: Any | None = None
+    max_consecutive_cli_failures: int = 3
     _resolved_backend: str = field(init=False, repr=False)
+    _original_backend: str = field(init=False, repr=False)
     _recent_transition_summaries: list[dict[str, Any]] = field(init=False, default_factory=list, repr=False)
     _logger: logging.Logger = field(init=False, repr=False)
     _prompt_template: Template = field(init=False, repr=False)
     _action_schema_text: str = field(init=False, repr=False)
+    _consecutive_failures: int = field(init=False, default=0, repr=False)
+    _fallback_active: bool = field(init=False, default=False, repr=False)
+    _retry_original_countdown: int = field(init=False, default=0, repr=False)
 
     def __post_init__(self) -> None:
         self._resolved_backend = resolve_backend(self.backend, self.command)
+        self._original_backend = self._resolved_backend
         if self.command is None:
             self.command = self._resolved_backend  # "codex" or "claude"
         self._logger = logging.getLogger(f"arena_agent.cli.{self._resolved_backend}")
@@ -123,8 +139,23 @@ class AgentExecPolicy(Policy):
 
     def decide(self, state: AgentState) -> Action:
         prompt = self._build_prompt(state)
+
+        # Periodically retry the original backend when running on fallback.
+        if self._fallback_active and self._retry_original_countdown <= 0:
+            self._switch_backend(self._original_backend)
+            self._fallback_active = False
+            self._logger.info("Retrying original backend: %s", self._original_backend)
+            self._retry_original_countdown = 10  # retry every 10 decisions
+        elif self._fallback_active:
+            self._retry_original_countdown -= 1
+
         try:
             payload = self._run_cli(prompt)
+            self._consecutive_failures = 0
+            if self._fallback_active:
+                # Original backend recovered — stay on it.
+                self._fallback_active = False
+                self._logger.info("Original backend %s recovered.", self._resolved_backend)
             parsed = parse_decision_response(payload)
             metadata = dict(parsed.metadata)
             metadata.setdefault("source", f"{self._resolved_backend}_exec")
@@ -138,13 +169,41 @@ class AgentExecPolicy(Policy):
                 metadata=metadata,
             )
         except Exception as exc:
+            self._consecutive_failures += 1
             if self.fail_open_to_hold:
                 self._logger.warning("CLI decision failed (%s): %s", self._resolved_backend, exc)
+                # Try fallback backend after consecutive failures.
+                if self._consecutive_failures >= self.max_consecutive_cli_failures:
+                    self._try_fallback()
                 return Action.hold(
                     reason=f"cli_error:{type(exc).__name__}",
                     error=str(exc),
                 )
             raise
+
+    def _try_fallback(self) -> None:
+        """Switch to an alternative backend after consecutive CLI failures."""
+        fallback = _find_fallback_backend(self._resolved_backend)
+        if fallback is None:
+            self._logger.warning(
+                "%s failed %d times consecutively — no fallback backend available.",
+                self._resolved_backend, self._consecutive_failures,
+            )
+            return
+        self._logger.warning(
+            "%s failed %d times consecutively — falling back to %s.",
+            self._resolved_backend, self._consecutive_failures, fallback,
+        )
+        self._switch_backend(fallback)
+        self._fallback_active = True
+        self._retry_original_countdown = 10
+        self._consecutive_failures = 0
+
+    def _switch_backend(self, backend: str) -> None:
+        """Switch the active backend."""
+        self._resolved_backend = backend
+        self.command = backend
+        self._logger = logging.getLogger(f"arena_agent.cli.{backend}")
 
     def _build_prompt(self, state: AgentState) -> str:
         context = {

@@ -97,6 +97,7 @@ class SetupAgent:
         model: str | None = None,
         timeout: float = 300.0,
         mcp_config_path: str | None = None,
+        max_consecutive_failures: int = 2,
     ):
         self.backend = backend
         self.model = model
@@ -109,6 +110,9 @@ class SetupAgent:
                 "Set ARENA_ROOT or ARENA_HOME env var, or pass mcp_config_path explicitly."
             )
         self._resolved_backend = resolve_backend(backend, None)
+        self._original_backend = self._resolved_backend
+        self._consecutive_failures = 0
+        self._max_consecutive_failures = max_consecutive_failures
         self._prompt_template = Template(
             _PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
         )
@@ -120,15 +124,32 @@ class SetupAgent:
         logger.info("Setup agent invoking %s (timeout=%ss)", self._resolved_backend, self.timeout)
         try:
             payload = self._run_cli(prompt)
+            self._consecutive_failures = 0
             return self._parse_decision(payload)
         except Exception as exc:
-            logger.warning("Setup agent decision failed: %s", exc)
+            self._consecutive_failures += 1
+            logger.warning("Setup agent decision failed (%d consecutive): %s", self._consecutive_failures, exc)
+            if self._consecutive_failures >= self._max_consecutive_failures:
+                self._try_fallback()
             return SetupDecision(
                 action="hold",
                 overrides=None,
                 reason=f"setup_error: {exc}",
                 restart_runtime=False,
             )
+
+    def _try_fallback(self) -> None:
+        """Switch to an alternative backend after consecutive failures."""
+        from arena_agent.agents.agent_exec_policy import _find_fallback_backend
+        fallback = _find_fallback_backend(self._resolved_backend)
+        if fallback is None:
+            return
+        logger.warning(
+            "Setup agent: %s failed %d times — falling back to %s.",
+            self._resolved_backend, self._consecutive_failures, fallback,
+        )
+        self._resolved_backend = fallback
+        self._consecutive_failures = 0
 
     def _render_prompt(self, context: dict[str, Any], memory_context: str) -> str:
         memory_block = ""
