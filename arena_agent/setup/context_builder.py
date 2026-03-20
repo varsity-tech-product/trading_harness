@@ -36,13 +36,18 @@ def build_setup_context(
     try:
         account = varsity_tools.get_live_account(competition_id)
         if isinstance(account, dict) and account.get("code") is None:
+            # API fields: capital (equity), walletBalance, availableBalance,
+            # unrealizedPnl, initialBalance, tradesCount, maxTrades
+            equity = float(account.get("capital") or account.get("equity") or 5000)
+            initial = float(account.get("initialBalance") or 5000)
+            wallet = float(account.get("walletBalance") or account.get("balance") or equity)
             context["account_state"] = {
-                "balance": account.get("balance") or account.get("initialBalance", 5000),
-                "equity": account.get("capital") or account.get("equity", 5000),
-                "unrealized_pnl": account.get("unrealizedPnl", 0),
-                "realized_pnl": account.get("realizedPnl", 0),
-                "trade_count": account.get("tradesCount", 0),
-                "initial_balance": account.get("initialBalance", 5000),
+                "balance": wallet,
+                "equity": equity,
+                "unrealized_pnl": float(account.get("unrealizedPnl") or 0),
+                "realized_pnl": round(wallet - initial, 4),
+                "trade_count": int(account.get("tradesCount") or 0),
+                "initial_balance": initial,
             }
         else:
             context["account_state"] = {"error": str(account)}
@@ -67,7 +72,7 @@ def build_setup_context(
                 "symbol": detail.get("symbol") or symbol,
                 "start_time": detail.get("startTime"),
                 "end_time": detail.get("endTime"),
-                "max_trades": detail.get("maxTrades"),
+                "max_trades": detail.get("maxTradesPerMatch") or detail.get("maxTrades"),
                 "starting_capital": detail.get("startingCapital"),
                 "fee_rate": detail.get("feeRate") or detail.get("fee_rate"),
             }
@@ -81,7 +86,7 @@ def build_setup_context(
             acct = context.get("account_state", {})
             if isinstance(acct, dict) and "trade_count" in acct:
                 trade_count = acct["trade_count"]
-            max_trades = detail.get("maxTrades")
+            max_trades = detail.get("maxTradesPerMatch") or detail.get("maxTrades")
             if max_trades is not None:
                 context["competition"]["trades_remaining"] = max(0, max_trades - trade_count)
     except Exception as exc:
@@ -245,7 +250,8 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
     for trade in trades:
         if not isinstance(trade, dict):
             continue
-        pnl = float(trade.get("realizedPnl", 0))
+        # API returns "pnl" (not "realizedPnl") and "fee" (not "commission")
+        pnl = float(trade.get("pnl") or trade.get("realizedPnl") or 0)
         pnls.append(pnl)
         total_pnl += pnl
         if pnl > 0:
@@ -254,24 +260,35 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
             losses += 1
 
         # Fees
-        commission = float(trade.get("commission", 0))
-        total_fees += commission
+        fee = float(trade.get("fee") or trade.get("commission") or 0)
+        total_fees += fee
 
-        # Hold time
-        open_time = trade.get("openTime") or trade.get("entryTime")
-        close_time = trade.get("closeTime") or trade.get("exitTime")
-        if open_time is not None and close_time is not None:
+        # Hold time — API provides holdDuration in seconds directly
+        hold_sec = trade.get("holdDuration")
+        if hold_sec is not None:
             try:
-                ot = float(open_time) / 1000 if float(open_time) > 1e12 else float(open_time)
-                ct = float(close_time) / 1000 if float(close_time) > 1e12 else float(close_time)
-                hold_sec = ct - ot
-                if hold_sec >= 0:
-                    hold_times.append(hold_sec)
-                    # Stopped out: negative PnL and held < 120s
-                    if pnl < 0 and hold_sec < 120:
-                        trades_stopped_out += 1
+                hold_sec = float(hold_sec)
+                hold_times.append(hold_sec)
+                # Stopped out: negative PnL and held < 120s
+                if pnl < 0 and hold_sec < 120:
+                    trades_stopped_out += 1
             except (TypeError, ValueError):
                 pass
+        else:
+            # Fallback: compute from timestamps
+            open_time = trade.get("openTime") or trade.get("entryTime")
+            close_time = trade.get("closeTime") or trade.get("exitTime")
+            if open_time is not None and close_time is not None:
+                try:
+                    ot = float(open_time) / 1000 if float(open_time) > 1e12 else float(open_time)
+                    ct = float(close_time) / 1000 if float(close_time) > 1e12 else float(close_time)
+                    hs = ct - ot
+                    if hs >= 0:
+                        hold_times.append(hs)
+                        if pnl < 0 and hs < 120:
+                            trades_stopped_out += 1
+                except (TypeError, ValueError):
+                    pass
 
     avg_pnl = total_pnl / len(pnls) if pnls else 0
     win_rate = wins / len(pnls) if pnls else 0
