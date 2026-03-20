@@ -7,18 +7,59 @@
       "type": "string",
       "enum": ["update", "hold"]
     },
-    "overrides": {
-      "type": ["object", "null"],
-      "description": "Config fields to deep-merge into the runtime YAML. Only include fields you want to change."
+    "policy": {
+      "type": "string",
+      "enum": ["ma_crossover", "rsi_mean_reversion", "channel_breakout", "ensemble"],
+      "description": "Rule-based policy to use. The runtime executes this deterministically — no per-tick LLM calls."
+    },
+    "policy_params": {
+      "type": "object",
+      "description": "Exact params for the chosen policy (e.g. {\"fast_period\": 10, \"slow_period\": 30})."
+    },
+    "ensemble_members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "params": { "type": "object" }
+        },
+        "required": ["type"]
+      },
+      "description": "Only used when policy is 'ensemble'. Array of {type, params} objects."
+    },
+    "indicators": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Indicators to compute, format: NAME_PERIOD (e.g. SMA_20, RSI_14, ATR_14)."
+    },
+    "tp_pct": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 5.0,
+      "description": "Take profit as a percentage of entry price (0.1-5.0)."
+    },
+    "sl_pct": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 3.0,
+      "description": "Stop loss as a percentage of entry price (0.1-3.0)."
+    },
+    "sizing_fraction": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 20,
+      "description": "Position size as a percentage of equity (1-20)."
+    },
+    "direction_bias": {
+      "type": "string",
+      "enum": ["both", "long_only", "short_only"],
+      "description": "Which trade directions are allowed."
     },
     "reason": {
       "type": "string",
       "minLength": 1,
       "description": "Short explanation of the decision."
-    },
-    "restart_runtime": {
-      "type": "boolean",
-      "description": "Whether the runtime process needs to restart for changes to take effect."
     },
     "next_check_seconds": {
       "type": ["integer", "null"],
@@ -28,7 +69,15 @@
     },
     "chat_message": {
       "type": ["string", "null"],
-      "description": "Optional message to send to the competition chat. Use to communicate with other participants."
+      "description": "Optional message to send to the competition chat."
+    },
+    "overrides": {
+      "type": ["object", "null"],
+      "description": "LEGACY: Config fields to deep-merge into the runtime YAML. Prefer the flat fields above."
+    },
+    "restart_runtime": {
+      "type": "boolean",
+      "description": "Whether the runtime process needs to restart for changes to take effect."
     }
   },
   "required": ["action", "reason"]

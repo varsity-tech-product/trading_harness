@@ -20,22 +20,17 @@ def build_setup_context(
     """Assemble everything the setup agent needs to make a decision."""
     context: dict[str, Any] = {}
 
-    # Current config snapshot
-    context["current_config"] = {
-        "policy": {
-            k: v
-            for k, v in config.get("policy", {}).items()
-            if k in (
-                "indicator_mode", "timeout_seconds", "extra_instructions",
-                "strategy_context", "fail_open_to_hold", "sandbox_mode",
-            )
-        },
-        "strategy": config.get("strategy", {}),
-        "risk_limits": config.get("risk_limits", {}),
-        "signal_indicators": config.get("signal_indicators", []),
-        "interval": config.get("interval", "1m"),
-        "tick_interval_seconds": config.get("tick_interval_seconds", 30),
-    }
+    symbol = config.get("symbol", "BTCUSDT")
+    interval = config.get("interval", "1m")
+
+    # --- Compact header: symbol, price, equity, position (Layer 1) ---
+    # Market summary first so we have price for the header
+    try:
+        market = _compute_market_summary(symbol, interval)
+        context["market_summary"] = market
+    except Exception as exc:
+        market = {"available": False, "error": str(exc)}
+        context["market_summary"] = market
 
     # Account state
     try:
@@ -69,12 +64,18 @@ def build_setup_context(
                 "id": competition_id,
                 "title": detail.get("title"),
                 "status": detail.get("status"),
-                "symbol": detail.get("symbol"),
+                "symbol": detail.get("symbol") or symbol,
                 "start_time": detail.get("startTime"),
                 "end_time": detail.get("endTime"),
                 "max_trades": detail.get("maxTrades"),
                 "starting_capital": detail.get("startingCapital"),
+                "fee_rate": detail.get("feeRate") or detail.get("fee_rate"),
             }
+            # Use competition symbol if available (asset-agnostic)
+            comp_symbol = detail.get("symbol")
+            if comp_symbol:
+                symbol = comp_symbol
+                context["competition"]["symbol"] = comp_symbol
             # Compute trades remaining
             trade_count = 0
             acct = context.get("account_state", {})
@@ -86,15 +87,19 @@ def build_setup_context(
     except Exception as exc:
         context["competition"] = {"id": competition_id, "error": str(exc)}
 
-    # Market summary from recent klines
-    symbol = config.get("symbol", "BTCUSDT")
-    interval = config.get("interval", "1m")
-    try:
-        context["market_summary"] = _compute_market_summary(symbol, interval)
-    except Exception as exc:
-        context["market_summary"] = {"error": str(exc)}
+    # Current config snapshot — include policy type for cooldown awareness
+    policy_config = config.get("policy", {})
+    context["current_config"] = {
+        "policy_type": policy_config.get("type", "unknown"),
+        "policy_params": policy_config.get("params", {}),
+        "strategy": config.get("strategy", {}),
+        "risk_limits": config.get("risk_limits", {}),
+        "signal_indicators": config.get("signal_indicators", []),
+        "interval": interval,
+        "tick_interval_seconds": config.get("tick_interval_seconds", 30),
+    }
 
-    # Recent trade performance
+    # Recent trade performance (enhanced)
     try:
         context["performance"] = _compute_performance(competition_id)
     except Exception as exc:
@@ -212,10 +217,15 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
     wins = 0
     losses = 0
     total_pnl = 0.0
+    total_fees = 0.0
     pnls: list[float] = []
+    hold_times: list[float] = []
+    trades_stopped_out = 0
 
     for trade in trades:
-        pnl = float(trade.get("realizedPnl", 0) if isinstance(trade, dict) else 0)
+        if not isinstance(trade, dict):
+            continue
+        pnl = float(trade.get("realizedPnl", 0))
         pnls.append(pnl)
         total_pnl += pnl
         if pnl > 0:
@@ -223,8 +233,29 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
         elif pnl < 0:
             losses += 1
 
+        # Fees
+        commission = float(trade.get("commission", 0))
+        total_fees += commission
+
+        # Hold time
+        open_time = trade.get("openTime") or trade.get("entryTime")
+        close_time = trade.get("closeTime") or trade.get("exitTime")
+        if open_time is not None and close_time is not None:
+            try:
+                ot = float(open_time) / 1000 if float(open_time) > 1e12 else float(open_time)
+                ct = float(close_time) / 1000 if float(close_time) > 1e12 else float(close_time)
+                hold_sec = ct - ot
+                if hold_sec >= 0:
+                    hold_times.append(hold_sec)
+                    # Stopped out: negative PnL and held < 120s
+                    if pnl < 0 and hold_sec < 120:
+                        trades_stopped_out += 1
+            except (TypeError, ValueError):
+                pass
+
     avg_pnl = total_pnl / len(pnls) if pnls else 0
     win_rate = wins / len(pnls) if pnls else 0
+    avg_hold_seconds = sum(hold_times) / len(hold_times) if hold_times else 0
 
     return {
         "available": True,
@@ -234,5 +265,8 @@ def _compute_performance(competition_id: int) -> dict[str, Any]:
         "win_rate": round(win_rate, 3),
         "total_pnl": round(total_pnl, 4),
         "avg_pnl": round(avg_pnl, 4),
+        "total_fees": round(total_fees, 4),
+        "avg_hold_seconds": round(avg_hold_seconds, 1),
+        "trades_stopped_out": trades_stopped_out,
         "recent_pnls": [round(p, 4) for p in pnls[-10:]],
     }

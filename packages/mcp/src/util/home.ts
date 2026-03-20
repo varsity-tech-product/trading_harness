@@ -286,7 +286,7 @@ strategy:
 
 risk_limits:
   max_position_size_pct: 0.1
-  max_absolute_size: 0.01
+  # max_absolute_size removed — computed from sizing_fraction + equity + price.
   min_size: 0.001
   quantity_precision: 3
   price_precision: 2
@@ -359,7 +359,7 @@ policy:
 
 risk_limits:
   max_position_size_pct: 0.1
-  max_absolute_size: 0.01
+  # max_absolute_size removed — computed from sizing_fraction + equity + price.
   min_size: 0.001
   quantity_precision: 3
   price_precision: 2

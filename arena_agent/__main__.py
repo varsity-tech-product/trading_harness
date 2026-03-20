@@ -252,16 +252,26 @@ def _run_auto(argv: list[str]) -> None:
     config_dict["dry_run"] = args.dry_run
     config_dict.setdefault("symbol", "BTCUSDT")
 
-    # Ensure policy is set up for agent_exec
+    # Set up initial policy defaults.
+    # The setup agent may override this with a rule policy (ma_crossover, etc.)
+    # when using 'auto' mode. For explicit agent backends (claude, gemini, etc.),
+    # we start with agent_exec and let the setup agent reconfigure if desired.
     policy = config_dict.setdefault("policy", {})
-    policy["type"] = "agent_exec"
-    policy["backend"] = _AGENT_EXEC_BACKENDS[args.agent]
-    policy["cwd"] = str(Path.cwd())
-    policy.setdefault("indicator_mode", "full")
-    policy.setdefault("fail_open_to_hold", True)
-    policy.setdefault("timeout_seconds", args.timeout_seconds)
-    if args.model:
-        policy["model"] = args.model
+    if args.agent not in ("auto",):
+        # Explicit agent backend — start with agent_exec
+        policy["type"] = "agent_exec"
+        policy["backend"] = _AGENT_EXEC_BACKENDS[args.agent]
+        policy["cwd"] = str(Path.cwd())
+        policy.setdefault("indicator_mode", "full")
+        policy.setdefault("fail_open_to_hold", True)
+        policy.setdefault("timeout_seconds", args.timeout_seconds)
+        if args.model:
+            policy["model"] = args.model
+    else:
+        # Auto mode — the setup agent picks the policy type.
+        # Start with a safe default rule policy until the first setup cycle runs.
+        policy.setdefault("type", "ma_crossover")
+        policy.setdefault("params", {})
 
     stop_requested = False
 
@@ -286,8 +296,11 @@ def _run_auto(argv: list[str]) -> None:
             mcp_config = str(candidate)
             break
 
+    # The setup agent always uses an LLM backend, even when the runtime
+    # policy is rule-based. Use the agent backend or default to "auto".
+    setup_backend = _AGENT_EXEC_BACKENDS.get(args.agent, "auto")
     setup_agent = SetupAgent(
-        backend=policy["backend"],
+        backend=setup_backend,
         model=args.setup_model or args.model,
         timeout=args.timeout_seconds * 2,
         mcp_config_path=mcp_config,
@@ -301,6 +314,10 @@ def _run_auto(argv: list[str]) -> None:
         # --- Setup phase ---
         try:
             context = build_setup_context(args.competition_id, config_dict, memory.recent(5))
+            # Propagate symbol from competition detail (asset-agnostic)
+            comp = context.get("competition", {})
+            if isinstance(comp, dict) and comp.get("symbol"):
+                config_dict["symbol"] = comp["symbol"]
             memory_text = memory.format_for_prompt(5)
             decision = setup_agent.decide(context, memory_text)
             log.info(
@@ -310,6 +327,9 @@ def _run_auto(argv: list[str]) -> None:
             if decision.action == "update" and decision.overrides:
                 log.info("Applying overrides: %s", list(decision.overrides.keys()))
                 _deep_merge(config_dict, decision.overrides)
+                # Log the effective policy type after merge
+                eff_policy = config_dict.get("policy", {}).get("type", "unknown")
+                log.info("Effective policy after merge: %s", eff_policy)
             if decision.chat_message:
                 try:
                     import varsity_tools

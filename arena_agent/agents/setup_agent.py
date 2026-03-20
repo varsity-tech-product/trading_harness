@@ -6,10 +6,12 @@ from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from string import Template
 import tempfile
+import time
 from typing import Any
 
 from arena_agent.agents.agent_exec_policy import (
@@ -22,6 +24,11 @@ logger = logging.getLogger("arena_agent.setup_agent")
 
 _PROMPT_TEMPLATE_PATH = Path(__file__).with_name("setup_prompt_template.md")
 _SCHEMA_PATH = Path(__file__).with_name("setup_action_schema.json")
+
+# Strategy change cooldown settings
+_COOLDOWN_SECONDS = 1200  # 20 minutes
+_COOLDOWN_MIN_TRADES = 5
+_CATASTROPHIC_DRAWDOWN_PCT = 0.03  # 3%
 
 
 def _find_mcp_config() -> str | None:
@@ -54,7 +61,6 @@ def _find_mcp_config() -> str | None:
 def _extract_json_object(text: str) -> dict[str, Any] | None:
     """Extract the first top-level JSON object from mixed text/markdown output."""
     # Try to find a fenced block first
-    import re
     fence_match = re.search(r"```(?:json)?\s*\n(\{.*?\})\s*\n```", text, re.DOTALL)
     if fence_match:
         try:
@@ -99,6 +105,125 @@ class SetupDecision:
         }
 
 
+def _parse_indicator_spec(indicator_str: str) -> dict[str, Any] | None:
+    """Parse 'NAME_PERIOD' format to FeatureSpec dict.
+
+    Examples:
+        'SMA_20' -> {'indicator': 'SMA', 'params': {'timeperiod': 20}}
+        'MACD'   -> {'indicator': 'MACD'}
+        'RSI_14' -> {'indicator': 'RSI', 'params': {'timeperiod': 14}}
+    """
+    indicator_str = indicator_str.strip()
+    if not indicator_str:
+        return None
+    # Try to split on last underscore to get NAME_PERIOD
+    match = re.match(r"^([A-Z_]+?)_(\d+)$", indicator_str)
+    if match:
+        name = match.group(1)
+        period = int(match.group(2))
+        return {"indicator": name, "params": {"timeperiod": period}}
+    # No period — just the indicator name
+    if re.match(r"^[A-Z_]+$", indicator_str):
+        return {"indicator": indicator_str}
+    return None
+
+
+def _translate_flat_decision(payload: dict[str, Any]) -> dict[str, Any]:
+    """Map the flat setup decision schema to internal config overrides.
+
+    Converts percentage-based, flat fields into the nested config dict
+    that the runtime expects.
+    """
+    overrides: dict[str, Any] = {}
+
+    # --- Policy ---
+    policy_type = payload.get("policy")
+    if policy_type:
+        policy_params = payload.get("policy_params", {})
+        # Validate policy_params: all values must be numeric
+        clean_params = {}
+        if isinstance(policy_params, dict):
+            for k, v in policy_params.items():
+                try:
+                    clean_params[k] = float(v) if isinstance(v, (int, float)) else float(v)
+                    # Preserve int if it was int
+                    if isinstance(v, int) or (isinstance(v, float) and v == int(v)):
+                        clean_params[k] = int(clean_params[k])
+                except (TypeError, ValueError):
+                    logger.warning("Ignoring non-numeric policy_param %s=%r", k, v)
+
+        if policy_type == "ensemble":
+            members_raw = payload.get("ensemble_members", [])
+            members = []
+            for m in members_raw:
+                if isinstance(m, dict) and "type" in m:
+                    member = {"type": m["type"]}
+                    if "params" in m and isinstance(m["params"], dict):
+                        member["params"] = m["params"]
+                    members.append(member)
+            overrides["policy"] = {
+                "type": "ensemble",
+                "members": members or [{"type": "ma_crossover"}],
+            }
+        else:
+            overrides["policy"] = {
+                "type": policy_type,
+                "params": clean_params,
+            }
+
+    # --- TP/SL (percentage-based -> fixed_pct) ---
+    tp_pct = payload.get("tp_pct")
+    sl_pct = payload.get("sl_pct")
+    if tp_pct is not None or sl_pct is not None:
+        tpsl: dict[str, Any] = {"type": "fixed_pct"}
+        if tp_pct is not None:
+            tp_pct = max(0.1, min(5.0, float(tp_pct)))
+            tpsl["tp_pct"] = tp_pct / 100.0
+        if sl_pct is not None:
+            sl_pct = max(0.1, min(3.0, float(sl_pct)))
+            tpsl["sl_pct"] = sl_pct / 100.0
+        overrides.setdefault("strategy", {})["tpsl"] = tpsl
+
+    # --- Sizing (percentage-based -> fixed_fraction) ---
+    sizing_fraction = payload.get("sizing_fraction")
+    if sizing_fraction is not None:
+        sizing_fraction = max(1, min(20, float(sizing_fraction)))
+        overrides.setdefault("strategy", {})["sizing"] = {
+            "type": "fixed_fraction",
+            "fraction": sizing_fraction / 100.0,
+        }
+
+    # --- Direction bias ---
+    direction_bias = payload.get("direction_bias")
+    if direction_bias in ("both", "long_only", "short_only"):
+        overrides["risk_limits"] = {
+            "allow_long": direction_bias != "short_only",
+            "allow_short": direction_bias != "long_only",
+        }
+
+    # --- Indicators (NAME_PERIOD -> signal_indicators FeatureSpec list) ---
+    indicators = payload.get("indicators")
+    if isinstance(indicators, list) and indicators:
+        signal_indicators = []
+        for ind_str in indicators:
+            spec = _parse_indicator_spec(str(ind_str))
+            if spec:
+                signal_indicators.append(spec)
+        if signal_indicators:
+            overrides["signal_indicators"] = signal_indicators
+            # Ensure custom indicator mode when specifying indicators
+            overrides.setdefault("policy", {})["indicator_mode"] = "custom"
+
+    # --- Clear max_absolute_size so runtime computes from fraction + equity ---
+    overrides.setdefault("risk_limits", {})["max_absolute_size"] = None
+
+    # --- Always restart when policy changes ---
+    if "policy" in overrides:
+        pass  # restart_runtime handled by caller
+
+    return overrides
+
+
 class SetupAgent:
     """Runs an LLM to decide config changes for the runtime agent."""
 
@@ -129,14 +254,30 @@ class SetupAgent:
         )
         self._schema_text = _SCHEMA_PATH.read_text(encoding="utf-8").strip()
 
+        # Strategy change cooldown state
+        self._last_strategy_change_time: float | None = None
+        self._last_strategy_key: str | None = None  # "policy_type:params_hash"
+        self._equity_at_last_change: float | None = None
+        self._trades_since_last_change: int = 0
+
     def decide(self, context: dict[str, Any], memory_context: str = "") -> SetupDecision:
         """Send context to LLM, get config update decision."""
+        # Track trade count for cooldown
+        perf = context.get("performance", {})
+        if isinstance(perf, dict):
+            current_trade_count = perf.get("trade_count", 0)
+        else:
+            current_trade_count = 0
+
         prompt = self._render_prompt(context, memory_context)
         logger.info("Setup agent invoking %s (timeout=%ss)", self._resolved_backend, self.timeout)
         try:
             payload = self._run_cli(prompt)
             self._consecutive_failures = 0
-            return self._parse_decision(payload)
+            decision = self._parse_decision(payload)
+            # Apply cooldown enforcement
+            decision = self._apply_cooldown(decision, context, current_trade_count)
+            return decision
         except Exception as exc:
             self._consecutive_failures += 1
             logger.warning("Setup agent decision failed (%d consecutive): %s", self._consecutive_failures, exc)
@@ -148,6 +289,87 @@ class SetupAgent:
                 reason=f"setup_error: {exc}",
                 restart_runtime=False,
             )
+
+    def _apply_cooldown(
+        self,
+        decision: SetupDecision,
+        context: dict[str, Any],
+        current_trade_count: int,
+    ) -> SetupDecision:
+        """Enforce strategy change cooldown to prevent rapid thrashing."""
+        if decision.action != "update" or not decision.overrides:
+            return decision
+
+        # Determine if policy is actually changing
+        new_policy = decision.overrides.get("policy", {})
+        if not isinstance(new_policy, dict) or "type" not in new_policy:
+            return decision  # Not a policy change, allow it
+
+        new_key = f"{new_policy.get('type')}:{json.dumps(new_policy.get('params', {}), sort_keys=True)}"
+        if self._last_strategy_key is not None and new_key == self._last_strategy_key:
+            return decision  # Same strategy, no cooldown needed
+
+        # Check cooldown conditions
+        if self._last_strategy_change_time is not None:
+            elapsed = time.time() - self._last_strategy_change_time
+            trades_since = current_trade_count - self._trades_since_last_change
+
+            time_ok = elapsed >= _COOLDOWN_SECONDS
+            trades_ok = trades_since >= _COOLDOWN_MIN_TRADES
+
+            if not time_ok and not trades_ok:
+                # Check catastrophic exception
+                acct = context.get("account_state", {})
+                if isinstance(acct, dict):
+                    current_equity = acct.get("equity", 0)
+                    if (
+                        self._equity_at_last_change is not None
+                        and self._equity_at_last_change > 0
+                        and current_equity > 0
+                    ):
+                        drawdown = (self._equity_at_last_change - current_equity) / self._equity_at_last_change
+                        if drawdown > _CATASTROPHIC_DRAWDOWN_PCT:
+                            logger.warning(
+                                "Strategy cooldown bypassed: %.1f%% drawdown exceeds %.1f%% threshold",
+                                drawdown * 100, _CATASTROPHIC_DRAWDOWN_PCT * 100,
+                            )
+                        else:
+                            # Demote to hold
+                            logger.info(
+                                "Strategy cooldown: demoting update to hold (%.0fs / %d trades since last change)",
+                                elapsed, trades_since,
+                            )
+                            return SetupDecision(
+                                action="hold",
+                                overrides=None,
+                                reason=f"strategy_cooldown: {int(elapsed)}s / {trades_since} trades since last change",
+                                restart_runtime=False,
+                                next_check_seconds=decision.next_check_seconds,
+                                chat_message=decision.chat_message,
+                            )
+                    else:
+                        # Can't compute drawdown — enforce cooldown
+                        logger.info(
+                            "Strategy cooldown: demoting update to hold (%.0fs / %d trades since last change)",
+                            elapsed, trades_since,
+                        )
+                        return SetupDecision(
+                            action="hold",
+                            overrides=None,
+                            reason=f"strategy_cooldown: {int(elapsed)}s / {trades_since} trades since last change",
+                            restart_runtime=False,
+                            next_check_seconds=decision.next_check_seconds,
+                            chat_message=decision.chat_message,
+                        )
+
+        # Record this strategy change
+        self._last_strategy_change_time = time.time()
+        self._last_strategy_key = new_key
+        self._trades_since_last_change = current_trade_count
+        acct = context.get("account_state", {})
+        if isinstance(acct, dict):
+            self._equity_at_last_change = acct.get("equity")
+        return decision
 
     def _try_fallback(self) -> None:
         """Switch to an alternative backend after consecutive failures."""
@@ -355,14 +577,30 @@ class SetupAgent:
         chat_msg = payload.get("chat_message")
         if chat_msg is not None:
             chat_msg = str(chat_msg).strip() or None
-        overrides = payload.get("overrides") if action == "update" else None
-        if overrides:
+
+        # Detect flat vs legacy format:
+        # If the payload contains "policy" (a string), use the new flat path.
+        # If the payload contains "overrides" (a dict), use the legacy path.
+        uses_flat = isinstance(payload.get("policy"), str)
+        uses_legacy = isinstance(payload.get("overrides"), dict)
+
+        if action == "update" and uses_flat:
+            overrides = _translate_flat_decision(payload)
+            # Flat path always restarts when policy changes
+            restart = "policy" in overrides
+        elif action == "update" and uses_legacy:
+            overrides = payload["overrides"]
             overrides = _clamp_sizing_params(overrides)
+            restart = bool(payload.get("restart_runtime", False))
+        else:
+            overrides = None
+            restart = bool(payload.get("restart_runtime", False))
+
         return SetupDecision(
             action=action,
             overrides=overrides,
             reason=str(payload.get("reason", "no reason")),
-            restart_runtime=bool(payload.get("restart_runtime", False)),
+            restart_runtime=restart,
             next_check_seconds=next_check,
             chat_message=chat_msg,
         )
