@@ -253,26 +253,13 @@ def _run_auto(argv: list[str]) -> None:
     config_dict["dry_run"] = args.dry_run
     config_dict.setdefault("symbol", "BTCUSDT")
 
-    # Set up initial policy defaults.
-    # The setup agent may override this with a rule policy (ma_crossover, etc.)
-    # when using 'auto' mode. For explicit agent backends (claude, gemini, etc.),
-    # we start with agent_exec and let the setup agent reconfigure if desired.
+    # In auto mode, the --agent flag selects the setup agent's LLM backend,
+    # NOT the runtime policy. The runtime policy comes from the YAML config
+    # (or from setup agent overrides). The setup agent picks the strategy.
     policy = config_dict.setdefault("policy", {})
-    if args.agent not in ("auto",):
-        # Explicit agent backend — start with agent_exec
-        policy["type"] = "agent_exec"
-        policy["backend"] = _AGENT_EXEC_BACKENDS[args.agent]
-        policy["cwd"] = str(Path.cwd())
-        policy.setdefault("indicator_mode", "full")
-        policy.setdefault("fail_open_to_hold", True)
-        policy.setdefault("timeout_seconds", args.timeout_seconds)
-        if args.model:
-            policy["model"] = args.model
-    else:
-        # Auto mode — the setup agent picks the policy type.
-        # Start with a safe default rule policy until the first setup cycle runs.
-        policy.setdefault("type", "ma_crossover")
-        policy.setdefault("params", {})
+    # Ensure a valid default policy type if YAML doesn't specify one
+    policy.setdefault("type", "ma_crossover")
+    policy.setdefault("params", {})
 
     stop_requested = False
 
@@ -329,6 +316,14 @@ def _run_auto(argv: list[str]) -> None:
             )
             if decision.action == "update" and decision.overrides:
                 log.info("Applying overrides: %s", json.dumps(decision.overrides, default=str)[:2000])
+                # When policy type changes, replace the entire policy dict
+                # to avoid stale params from the old policy contaminating the new one.
+                new_policy = decision.overrides.get("policy", {})
+                old_policy_type = config_dict.get("policy", {}).get("type")
+                new_policy_type = new_policy.get("type") if isinstance(new_policy, dict) else None
+                if new_policy_type and new_policy_type != old_policy_type:
+                    log.info("Policy type changed: %s -> %s — replacing policy dict", old_policy_type, new_policy_type)
+                    config_dict["policy"] = decision.overrides.pop("policy")
                 _deep_merge(config_dict, decision.overrides)
                 # Log the effective policy type after merge
                 eff_policy = config_dict.get("policy", {})
