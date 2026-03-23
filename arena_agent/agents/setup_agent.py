@@ -31,6 +31,51 @@ _COOLDOWN_MIN_TRADES = 5
 _CATASTROPHIC_DRAWDOWN_PCT = 0.03  # 3%
 
 
+def _parse_codex_jsonl(raw: str) -> str | None:
+    """Parse Codex ``--json`` JSONL output, log events for auditing.
+
+    Returns the text from the last ``item.completed`` agent_message,
+    or ``None`` if no message was found.
+    """
+    final_text: str | None = None
+    for line in raw.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        etype = event.get("type", "")
+
+        if etype == "item.completed":
+            item = event.get("item", {})
+            if item.get("type") == "agent_message":
+                final_text = item.get("text", "")
+                logger.info("codex agent_message: %s", (final_text or "")[:1000])
+            elif item.get("type") == "reasoning":
+                summary = item.get("summary") or item.get("text") or ""
+                if summary:
+                    logger.info("codex reasoning: %s", summary[:2000])
+
+        elif etype == "turn.completed":
+            usage = event.get("usage", {})
+            parts = []
+            if usage.get("input_tokens"):
+                parts.append(f"in={usage['input_tokens']}")
+            if usage.get("cached_input_tokens"):
+                parts.append(f"cached={usage['cached_input_tokens']}")
+            if usage.get("output_tokens"):
+                parts.append(f"out={usage['output_tokens']}")
+            if parts:
+                logger.info("codex usage | %s", " ".join(parts))
+
+        elif etype == "thread.started":
+            logger.info("codex thread: %s", event.get("thread_id", "?"))
+
+    return final_text
+
+
 def _find_mcp_config() -> str | None:
     """Locate the .mcp.json config for arena MCP tools."""
     import os
@@ -445,6 +490,8 @@ class SetupAgent:
             return self._run_gemini(prompt)
         if self._resolved_backend == "openclaw":
             return self._run_openclaw(prompt)
+        if self._resolved_backend == "codex":
+            return self._run_codex(prompt)
         return self._run_claude(prompt)
 
     def _run_claude(self, prompt: str) -> dict[str, Any]:
@@ -471,6 +518,50 @@ class SetupAgent:
         if self.model:
             command.extend(["-m", self.model])
         return self._exec_subprocess(command, prompt, "gemini", response_key="response")
+
+    def _run_codex(self, prompt: str) -> dict[str, Any]:
+        command = [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--color", "never",
+            "--json",
+            "-c", 'model_reasoning_effort="medium"',
+            "-c", 'model_reasoning_summaries="verbose"',
+        ]
+        if self.model:
+            command.extend(["-m", self.model])
+        command.append("-")
+        result = subprocess.run(
+            command,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            cwd=tempfile.gettempdir(),
+            timeout=self.timeout,
+            check=False,
+        )
+        stderr_text = (result.stderr or "").strip()
+        if stderr_text:
+            logger.info("setup_agent codex stderr:\n%s", stderr_text[:2000])
+        # Parse JSONL events from stdout for audit logging
+        raw = (result.stdout or "").strip()
+        final_text = _parse_codex_jsonl(raw)
+        if result.returncode != 0:
+            raise RuntimeError(f"codex failed with code={result.returncode}: {(stderr_text or raw)[:500]}")
+        if not final_text:
+            raise RuntimeError("codex returned no assistant message")
+        result_text = _strip_markdown_fences(final_text)
+        try:
+            payload = json.loads(result_text)
+        except json.JSONDecodeError:
+            payload = _extract_json_object(result_text)
+            if payload is None:
+                raise ValueError(f"codex result is not valid JSON: {result_text[:500]}")
+        if not isinstance(payload, dict):
+            raise ValueError(f"codex payload must be an object, got: {payload!r}")
+        logger.info("setup_agent decision: %s", json.dumps(payload, default=str)[:1000])
+        return payload
 
     def _run_openclaw(self, prompt: str) -> dict[str, Any]:
         # Use whichever openclaw agent the user configured.

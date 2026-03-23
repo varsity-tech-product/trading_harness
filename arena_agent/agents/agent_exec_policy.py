@@ -359,14 +359,12 @@ class AgentExecPolicy(Policy):
             self.command,
             "exec",
             "--skip-git-repo-check",
-            "--color",
-            "never",
-            "-c",
-            "model_reasoning_effort=\"medium\"",
-            "-s",
-            self.sandbox_mode,
-            "--output-schema",
-            str(CODEX_SCHEMA_PATH),
+            "--color", "never",
+            "--json",
+            "-c", 'model_reasoning_effort="medium"',
+            "-c", 'model_reasoning_summaries="verbose"',
+            "-s", self.sandbox_mode,
+            "--output-schema", str(CODEX_SCHEMA_PATH),
         ]
         if self.model:
             command.extend(["-m", self.model])
@@ -384,6 +382,9 @@ class AgentExecPolicy(Policy):
                 timeout=self.timeout_seconds,
                 check=False,
             )
+            # Log JSONL events for auditing (reasoning, usage)
+            if result.stdout:
+                self._log_codex_events(result.stdout)
             if result.returncode != 0:
                 stderr = (result.stderr or result.stdout or "").strip()
                 raise RuntimeError(f"codex exec failed with code={result.returncode}: {stderr[:500]}")
@@ -398,8 +399,43 @@ class AgentExecPolicy(Policy):
                 raise ValueError(f"codex exec returned invalid JSON: {raw_output[:500]}") from exc
         if not isinstance(payload, dict):
             raise ValueError(f"codex exec payload must be an object, got: {payload!r}")
-        self._last_usage = None  # Codex CLI doesn't expose usage data
         return payload
+
+    def _log_codex_events(self, raw: str) -> None:
+        """Parse Codex --json JSONL events and log reasoning + usage for auditing."""
+        for line in raw.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            etype = event.get("type", "")
+            if etype == "item.completed":
+                item = event.get("item", {})
+                if item.get("type") == "reasoning":
+                    summary = item.get("summary") or item.get("text") or ""
+                    if summary:
+                        self._logger.info("codex reasoning: %s", summary[:2000])
+                elif item.get("type") == "agent_message":
+                    self._logger.info("codex message: %s", (item.get("text") or "")[:1000])
+            elif etype == "turn.completed":
+                usage = event.get("usage", {})
+                parts = []
+                if usage.get("input_tokens"):
+                    parts.append(f"in={usage['input_tokens']}")
+                if usage.get("cached_input_tokens"):
+                    parts.append(f"cached={usage['cached_input_tokens']}")
+                if usage.get("output_tokens"):
+                    parts.append(f"out={usage['output_tokens']}")
+                if parts:
+                    self._logger.info("codex usage | %s", " ".join(parts))
+                self._last_usage = {
+                    "input_tokens": usage.get("input_tokens"),
+                    "output_tokens": usage.get("output_tokens"),
+                    "cache_read_input_tokens": usage.get("cached_input_tokens"),
+                }
 
     def _run_claude(self, prompt: str) -> dict[str, Any]:
         command = [
