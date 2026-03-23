@@ -611,8 +611,12 @@ class SetupAgent:
                 parts.append(f"in={usage['input_tokens']}")
             if usage.get("output_tokens") is not None:
                 parts.append(f"out={usage['output_tokens']}")
-            if usage.get("cost_usd") is not None:
-                parts.append(f"cost=${usage['cost_usd']}")
+            if usage.get("cache_read_input_tokens") is not None:
+                parts.append(f"cached={usage['cache_read_input_tokens']}")
+            if usage.get("duration_ms") is not None:
+                parts.append(f"duration={usage['duration_ms']}ms")
+            if usage.get("model"):
+                parts.append(f"model={usage['model']}")
             if parts:
                 logger.info("setup_agent LLM usage | %s", " ".join(parts))
 

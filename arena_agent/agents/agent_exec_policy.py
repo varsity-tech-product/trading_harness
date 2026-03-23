@@ -58,13 +58,19 @@ def _extract_usage(wrapper: dict[str, Any] | None, backend: str) -> dict[str, An
         usage["cost_usd"] = wrapper.get("cost_usd")
         usage["duration_ms"] = wrapper.get("duration_ms")
     elif backend == "openclaw":
-        # OpenClaw wrapper: {"meta": {"tokens_in": ..., "tokens_out": ..., "cost": ...}}
+        # OpenClaw wrapper: {"meta": {"durationMs": ..., "agentMeta": {"usage": {"input": ..., "output": ...}, "model": ..., "provider": ...}}}
         meta = wrapper.get("meta")
         if isinstance(meta, dict):
-            usage["input_tokens"] = meta.get("tokens_in") or meta.get("input_tokens")
-            usage["output_tokens"] = meta.get("tokens_out") or meta.get("output_tokens")
-            usage["cost_usd"] = meta.get("cost") or meta.get("cost_usd")
-            usage["duration_ms"] = meta.get("duration_ms")
+            usage["duration_ms"] = meta.get("durationMs")
+            agent_meta = meta.get("agentMeta")
+            if isinstance(agent_meta, dict):
+                raw_usage = agent_meta.get("usage") or {}
+                usage["input_tokens"] = raw_usage.get("input")
+                usage["output_tokens"] = raw_usage.get("output")
+                usage["cache_read_input_tokens"] = raw_usage.get("cacheRead")
+                usage["model"] = agent_meta.get("model")
+                usage["provider"] = agent_meta.get("provider")
+                usage["session_id"] = agent_meta.get("sessionId")
 
     # Strip None values
     usage = {k: v for k, v in usage.items() if v is not None}
