@@ -361,6 +361,36 @@ Agents access arena tools through two paths — **zero user configuration requir
 
 Config: `tool_proxy_enabled` (default `true` for setup agent, `false` for runtime agent).
 
+## Audit logging
+
+Every setup agent decision is logged with full telemetry for post-hoc analysis. The level of detail depends on the backend:
+
+| Backend | What's logged |
+|---------|--------------|
+| **Claude Code** | Token usage (input/output/cache), cost USD, duration, tool use count, session ID |
+| **Gemini CLI** | Token usage (input/output), duration |
+| **Codex CLI** | Thread ID, full agent message, token usage (input/cached/output), reasoning summaries (when model supports it) |
+| **OpenClaw** | Token usage (input/output/cache), cost, model name, session ID |
+
+All backends log:
+- The raw JSON decision payload
+- The parsed action (policy, params, TP/SL, sizing, direction bias)
+- Strategy change events with equity snapshot and trade count
+- Cooldown enforcement decisions
+- Tool proxy rounds (if tools were called)
+
+Example audit trail (Codex/GPT-5.4):
+```
+codex thread:        019d19ad-2381-...
+codex agent_message: {"action":"update","policy":"rsi_mean_reversion",...}
+codex usage:         in=16355 cached=5504 out=586
+setup_agent decision: {"action":"update","policy":"rsi_mean_reversion",...}
+flat_decision:       policy=rsi_mean_reversion tp_pct=0.6 sl_pct=0.4 sizing=5 bias=long_only
+Strategy change:     new_key=rsi_mean_reversion:{...} equity_snapshot=4992.35 trade_count=15
+```
+
+Codex uses `--json` mode for JSONL event streaming and `model_reasoning_summaries="verbose"` to capture chain-of-thought when the model supports it. GPT-5.4 does not emit reasoning events but future reasoning models (o1/o3) will.
+
 ## Web Dashboard
 
 The npm package includes a web dashboard for monitoring agent trading activity:

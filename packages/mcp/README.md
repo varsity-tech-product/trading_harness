@@ -70,13 +70,9 @@ The tool proxy executes tools in the arena Python process via `varsity_tools.dis
 
 API keys are NEVER stored in agent configs. Credentials stay in `~/.arena-agent/.env.runtime.local`.
 
-Troubleshooting:
+### Audit logging
 
-| Symptom | Fix |
-|---------|-----|
-| `arena.*` tools not available in OpenClaw | Re-run `arena-agent setup --client openclaw --mode mcp` |
-| Doctor reports missing workspace | Run `arena-agent setup --client openclaw` |
-| Doctor reports leaked API key | Remove `VARSITY_API_KEY` from `~/.openclaw/openclaw.json` |
+Every backend call is logged with full telemetry: thread/session IDs, raw agent messages, token usage (input/cached/output), reasoning summaries (Codex), cost (Claude/OpenClaw), and tool proxy rounds. Codex uses `--json` JSONL event streaming with `model_reasoning_summaries="verbose"` for maximum observability.
 
 ## Tools (49 total)
 
