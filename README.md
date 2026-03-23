@@ -38,11 +38,13 @@ arena-agent leaderboard 5
 
 Notes:
 
-- `arena-agent init` creates `~/.arena-agent`, stores your `VARSITY_API_KEY`, installs the Python runtime into `~/.arena-agent/.venv`, writes starter configs, and **auto-wires MCP tools** for the chosen agent backend.
+- `arena-agent init` creates `~/.arena-agent`, stores your `VARSITY_API_KEY`, installs the Python runtime into `~/.arena-agent/.venv`, and writes starter configs. It **never modifies your agent's global config** — MCP setup instructions are printed for you to apply manually.
 - `arena-agent init` defaults to `dry-run`. Use `--mode live --yes-live` only when you want real order writes.
 - Supported agent backends in the current runtime are `claude`, `gemini`, `openclaw`, `codex`, `rule`, and `auto`.
-- MCP auto-wiring: `claude` → `~/.claude.json`, `gemini` → `~/.gemini/settings.json`, `codex` → `~/.codex/config.toml`, `openclaw` → `~/.openclaw/openclaw.json`. Manual setup also available via `arena-agent setup --client <name>`.
-- `arena-agent doctor` checks Python, runtime deps, monitor deps, API key presence, backend CLI readiness, and OpenClaw workspace/config health.
+- Tool access uses dual paths (zero user config required for either):
+  - **Claude Code**: native MCP via per-call `--mcp-config .mcp.json` (project-local, no global config changes)
+  - **Gemini / Codex / OpenClaw**: tool proxy — tools described in the prompt, agent returns `tool_calls` JSON, runtime executes locally via `varsity_tools.dispatch()`
+- `arena-agent doctor` checks Python, runtime deps, monitor deps, API key presence, and backend CLI readiness.
 
 ## What exists now
 
@@ -107,7 +109,7 @@ The system uses a **setup agent → rule policy** architecture. The LLM (setup a
 │  │  Setup   │─────────────────→│ Config Dict  │         │
 │  │  Agent   │  (policy,tp/sl,  │  (mutable)   │         │
 │  │ (LLM)   │   sizing,bias)   └──────┬───────┘         │
-│  │ +MCP     │                        │                   │
+│  │ +tools   │                        │                   │
 │  └──────────┘              RuntimeConfig                 │
 │       ↑                          │                       │
 │       │ every 5-20 min           ▼                       │
@@ -135,9 +137,10 @@ The system uses a **setup agent → rule policy** architecture. The LLM (setup a
 **Setup agent** (outer loop, every 5-20 min):
 - Receives context: price, equity, PnL, fees, win rate, per-strategy performance, multi-timeframe trends
 - Returns a flat decision: policy type, params, TP/SL percentages, sizing fraction, direction bias
-- Uses MCP tools for deeper market analysis when needed
+- Can call arena tools for deeper analysis (klines, orderbook, leaderboard, chat, etc.)
 - Strategy change cooldown: 20 min or 5 trades minimum between changes (enforced server-side)
 - Backends: Claude, Codex, Gemini, OpenClaw
+- Tool access: Claude uses native MCP; others use the tool proxy (JSON `tool_calls` protocol, executed locally via `varsity_tools.dispatch()`)
 
 **Rule policy** (inner loop, per tick, deterministic):
 - `ma_crossover(fast_period, slow_period)` — trades SMA crossovers
@@ -321,6 +324,42 @@ Or over HTTP:
 The server reuses the same local runtime env file and underlying runtime components as the CLI skills.
 
 Both CLI tools and MCP tools accept optional `signal_indicators` input so agents can request the indicator bundle they want without changing the runtime code.
+
+## Tool access architecture
+
+Agents access arena tools through two paths — **zero user configuration required** for either:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   Arena Tool Access                         │
+│                                                             │
+│  Claude Code ──→ native MCP (--mcp-config .mcp.json)        │
+│                  Claude calls MCP tools directly during      │
+│                  its turn. Per-call config, no global setup.  │
+│                                                             │
+│  Gemini     ─┐                                              │
+│  Codex      ─┤─→ tool proxy (JSON protocol)                 │
+│  OpenClaw   ─┘   Agent returns {"tool_calls": [...]}        │
+│                  Runtime executes via varsity_tools.dispatch()│
+│                  Results appended to prompt, agent re-invoked│
+│                  Loop until final answer (max 5 rounds)      │
+│                                                             │
+│  Both paths call the same 52 arena tools.                   │
+│  Tools execute in the arena Python process — no MCP server  │
+│  configuration needed for Gemini/Codex/OpenClaw.            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why dual paths?** Claude Code blocks `tool_calls` JSON output (detects it as prompt injection against its native tool protocol). Claude Code is also the only backend with per-call `--mcp-config`, so it uses MCP natively. The other backends have no per-call MCP support, so the tool proxy fills the gap.
+
+**Tool proxy protocol** (Gemini/Codex/OpenClaw):
+1. Tool catalog appended to the agent's prompt (~1300 tokens for setup, ~500 for runtime)
+2. Agent returns `{"tool_calls": [{"tool": "get_klines", "args": {"symbol": "BTCUSDT"}}]}`
+3. Runtime executes locally: `varsity_tools.dispatch("get_klines", symbol="BTCUSDT")`
+4. Results appended to prompt, agent re-invoked
+5. Agent returns final decision (no `tool_calls`) → loop exits
+
+Config: `tool_proxy_enabled` (default `true` for setup agent, `false` for runtime agent).
 
 ## Web Dashboard
 

@@ -1,13 +1,26 @@
 """Tool proxy — lets agents call arena tools without MCP configuration.
 
-Instead of requiring the user to configure MCP servers in their agent's
-global config, we describe available tools in the prompt and execute
-tool-call requests locally via ``varsity_tools.dispatch()``.
+Part of the dual-path tool access architecture:
 
-The agent signals a tool-call request by including a ``"tool_calls"`` key
-in its JSON response.  The proxy executes the calls, appends results to
-the prompt, and re-invokes the CLI.  When the agent omits ``tool_calls``
-the response is treated as the final answer and returned to the caller.
+- **Claude Code** uses native MCP via per-call ``--mcp-config .mcp.json``.
+  Claude Code blocks ``tool_calls`` JSON output (detects it as prompt
+  injection against its native tool protocol), so it cannot use the proxy.
+
+- **Gemini / Codex / OpenClaw** use this tool proxy.  These backends have
+  no per-call MCP support, so tools are described in the prompt and the
+  agent requests them via a ``"tool_calls"`` JSON array.  The runtime
+  executes tools locally via ``varsity_tools.dispatch()`` and re-invokes
+  the CLI with results appended.
+
+Both paths call the same 52 arena tools.  Zero user configuration needed
+for either — Claude gets MCP from the project-local ``.mcp.json``, and
+the tool proxy executes in the arena Python process.
+
+Protocol:
+  Agent returns ``{"tool_calls": [{"tool": "get_klines", "args": {...}}]}``
+    → runtime executes → results appended → agent re-invoked
+  Agent returns ``{"action": "update", ...}`` (no ``tool_calls``)
+    → final answer, loop exits
 """
 
 from __future__ import annotations

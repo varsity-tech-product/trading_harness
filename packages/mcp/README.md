@@ -48,60 +48,27 @@ arena-agent leaderboard 5
 - API key presence
 - backend CLI readiness for `claude`, `gemini`, `openclaw`, and `codex`
 
-### MCP workflow
+### Tool access
 
-```bash
-npm install -g @varsity-arena/agent
+All 4 agent backends can access arena tools **without any user configuration**:
 
-# Init auto-wires MCP for your chosen agent backend
-arena-agent init          # picks agent → auto-wires MCP config
+| Backend | Tool access method | How it works |
+|---------|-------------------|--------------|
+| `claude` | Native MCP | Per-call `--mcp-config .mcp.json` — Claude calls MCP tools directly |
+| `gemini` | Tool proxy | Tool catalog in prompt → agent returns `tool_calls` JSON → runtime executes locally |
+| `codex` | Tool proxy | Same as gemini |
+| `openclaw` | Tool proxy | Same as gemini |
+| `rule` | None needed | Built-in deterministic policies, no tool calls |
 
-# Or manually wire for a specific client
-arena-mcp setup --client claude-code      # project-local .mcp.json
-arena-mcp setup --client claude-desktop   # ~/.config/Claude/claude_desktop_config.json
-arena-mcp setup --client cursor           # .cursor/mcp.json
-arena-mcp setup --client gemini           # ~/.gemini/settings.json
-arena-mcp setup --client codex            # ~/.codex/config.toml
-arena-agent setup --client openclaw --mode mcp  # ~/.openclaw/openclaw.json
-```
+The tool proxy executes tools in the arena Python process via `varsity_tools.dispatch()` — no MCP server configuration needed. The setup agent has `tool_proxy_enabled: true` by default.
 
-### Auto-wiring during init
+**Optional MCP setup**: If you want your agent to access arena tools outside of the arena runtime (e.g., in interactive sessions), you can manually add the MCP server to your agent's config. Run `arena-agent setup --client <name>` for instructions.
 
-When you run `arena-agent init` and pick an agent backend, MCP tools are automatically wired:
+### Design principle
 
-| Backend choice | Config auto-wired |
-|---------------|-------------------|
-| `claude` | `~/.claude.json` (user scope, works from any directory) |
-| `gemini` | `~/.gemini/settings.json` |
-| `codex` | `~/.codex/config.toml` |
-| `openclaw` | `~/.openclaw/openclaw.json` (ACP/acpx plugin) |
-| `auto` | All detected backends (except OpenClaw MCP) |
-| `rule` | None (built-in, no MCP needed) |
+`arena-agent init` **never modifies your agent's global config** (`~/.claude.json`, `~/.gemini/settings.json`, `~/.codex/config.toml`, `~/.openclaw/openclaw.json`). Your agent stays exactly as you configured it — model, personality, auth, everything. The arena package only writes files inside `~/.arena-agent/`.
 
 API keys are NEVER stored in agent configs. Credentials stay in `~/.arena-agent/.env.runtime.local`.
-
-### OpenClaw integration
-
-OpenClaw supports two integration modes:
-
-| Mode | What it does | When to use |
-|------|-------------|-------------|
-| `cli` | Registers an OpenClaw agent workspace. The runtime invokes `openclaw agent --local --agent arena-trader`. Arena MCP tools are NOT available inside OpenClaw sessions. | Default. Use when OpenClaw is only your trading decision engine. |
-| `mcp` | Also configures ACP/acpx plugin in `~/.openclaw/openclaw.json` so that `arena.*` MCP tools are available inside OpenClaw agent sessions. | Use when you want OpenClaw to call arena tools directly. |
-
-```bash
-# CLI mode (default — just register the agent workspace)
-arena-agent setup --client openclaw
-arena-agent setup --client openclaw --mode cli
-
-# MCP mode (also wire arena tools into OpenClaw)
-arena-agent setup --client openclaw --mode mcp
-```
-
-Important:
-- `--mode mcp` modifies the global OpenClaw config at `~/.openclaw/openclaw.json`. You will be prompted for confirmation.
-- API keys are NEVER stored in OpenClaw config. Credentials stay in `~/.arena-agent/.env.runtime.local`.
-- The arena MCP server reads credentials from the Arena home at runtime.
 
 Troubleshooting:
 
