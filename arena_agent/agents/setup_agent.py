@@ -244,17 +244,20 @@ class SetupAgent:
         mcp_config_path: str | None = None,
         max_consecutive_failures: int = 2,
         openclaw_agent_id: str | None = None,
+        tool_proxy_enabled: bool = True,
+        tool_proxy_max_rounds: int = 5,
     ):
         self.backend = backend
         self.model = model
         self.timeout = timeout
         self.openclaw_agent_id = openclaw_agent_id
+        self.tool_proxy_enabled = tool_proxy_enabled
+        self.tool_proxy_max_rounds = tool_proxy_max_rounds
         self.mcp_config_path = mcp_config_path or _find_mcp_config()
-        if not self.mcp_config_path:
+        if not self.mcp_config_path and not tool_proxy_enabled:
             logger.warning(
-                "No .mcp.json config found — setup agent will not have access to "
-                "arena MCP tools (arena_klines, arena_leaderboard, etc). "
-                "Set ARENA_ROOT or ARENA_HOME env var, or pass mcp_config_path explicitly."
+                "No .mcp.json config found and tool proxy disabled — setup agent "
+                "will not have access to arena tools for deeper analysis."
             )
         self._resolved_backend = resolve_backend(backend, None)
         self._original_backend = self._resolved_backend
@@ -281,9 +284,20 @@ class SetupAgent:
             current_trade_count = 0
 
         prompt = self._render_prompt(context, memory_context)
+
+        # Append tool catalog so the agent can request additional data.
+        if self.tool_proxy_enabled:
+            from arena_agent.agents.tool_proxy import build_tool_prompt_section
+            comp = context.get("competition", {})
+            prompt += build_tool_prompt_section(
+                context_type="setup",
+                competition_id=comp.get("id") if isinstance(comp, dict) else None,
+                symbol=comp.get("symbol") if isinstance(comp, dict) else None,
+            )
+
         logger.info("Setup agent invoking %s (timeout=%ss)", self._resolved_backend, self.timeout)
         try:
-            payload = self._run_cli(prompt)
+            payload = self._run_cli_with_tools(prompt)
             self._consecutive_failures = 0
             decision = self._parse_decision(payload)
             # Apply cooldown enforcement
@@ -410,6 +424,19 @@ class SetupAgent:
             memory_context=memory_block,
             setup_context_json=json.dumps(context, ensure_ascii=False, default=str),
         )
+
+    def _run_cli_with_tools(self, prompt: str) -> dict[str, Any]:
+        """Run CLI with optional tool proxy loop."""
+        if not self.tool_proxy_enabled:
+            return self._run_cli(prompt)
+
+        from arena_agent.agents.tool_proxy import ToolProxyConfig, run_tool_proxy_loop
+        proxy_config = ToolProxyConfig(
+            enabled=True,
+            max_rounds=self.tool_proxy_max_rounds,
+            context_type="setup",
+        )
+        return run_tool_proxy_loop(self._run_cli, prompt, proxy_config)
 
     def _run_cli(self, prompt: str) -> dict[str, Any]:
         if self._resolved_backend == "claude":

@@ -176,6 +176,8 @@ def build_policy(config: dict, *, runtime_config=None) -> Policy:
         )
         openclaw_agent_id = config.get("openclaw_agent_id", params.pop("openclaw_agent_id", None))
         openclaw_agent_id = str(openclaw_agent_id) if openclaw_agent_id else None
+        tool_proxy_enabled = bool(config.get("tool_proxy_enabled", params.pop("tool_proxy_enabled", False)))
+        tool_proxy_max_rounds = int(config.get("tool_proxy_max_rounds", params.pop("tool_proxy_max_rounds", 3)))
         transition_path = None if runtime_config is None else runtime_config.storage.transition_path
         risk_limits = None if runtime_config is None else runtime_config.risk_limits
         return AgentExecPolicy(
@@ -193,6 +195,8 @@ def build_policy(config: dict, *, runtime_config=None) -> Policy:
             bootstrap_from_transition_log=bootstrap_from_transition_log,
             risk_limits=risk_limits,
             openclaw_agent_id=openclaw_agent_id,
+            tool_proxy_enabled=tool_proxy_enabled,
+            tool_proxy_max_rounds=tool_proxy_max_rounds,
             **params,
         )
     if policy_type == "ensemble":

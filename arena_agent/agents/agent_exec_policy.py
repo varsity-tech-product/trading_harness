@@ -165,6 +165,8 @@ class AgentExecPolicy(Policy):
     bootstrap_from_transition_log: bool = True
     risk_limits: RiskLimits | None = None
     openclaw_agent_id: str | None = None
+    tool_proxy_enabled: bool = False
+    tool_proxy_max_rounds: int = 3
     name: str = "agent_exec"
     subprocess_runner: Any | None = None
     max_consecutive_cli_failures: int = 3
@@ -202,8 +204,30 @@ class AgentExecPolicy(Policy):
             for transition in list(memory)[-self.recent_transition_limit :]
         ]
 
+    def _run_cli_with_tools(self, prompt: str) -> dict[str, Any]:
+        """Run CLI with optional tool proxy loop."""
+        if not self.tool_proxy_enabled:
+            return self._run_cli(prompt)
+
+        from arena_agent.agents.tool_proxy import ToolProxyConfig, run_tool_proxy_loop
+        proxy_config = ToolProxyConfig(
+            enabled=True,
+            max_rounds=self.tool_proxy_max_rounds,
+            context_type="runtime",
+        )
+        return run_tool_proxy_loop(self._run_cli, prompt, proxy_config)
+
     def decide(self, state: AgentState) -> Action:
         prompt = self._build_prompt(state)
+
+        # Append tool catalog when tool proxy is enabled.
+        if self.tool_proxy_enabled:
+            from arena_agent.agents.tool_proxy import build_tool_prompt_section
+            prompt += build_tool_prompt_section(
+                context_type="runtime",
+                competition_id=getattr(state.competition, "competition_id", None),
+                symbol=getattr(state.market, "symbol", None),
+            )
 
         # Periodically retry the original backend when running on fallback.
         if self._fallback_active and self._retry_original_countdown <= 0:
@@ -215,7 +239,7 @@ class AgentExecPolicy(Policy):
             self._retry_original_countdown -= 1
 
         try:
-            payload = self._run_cli(prompt)
+            payload = self._run_cli_with_tools(prompt)
             self._consecutive_failures = 0
             if self._fallback_active:
                 # Original backend recovered — stay on it.

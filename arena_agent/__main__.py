@@ -289,13 +289,16 @@ def _run_auto(argv: list[str]) -> None:
     # policy is rule-based. Use the agent backend or default to "auto".
     setup_backend = _AGENT_EXEC_BACKENDS.get(args.agent, "auto")
     # Let the user specify which openclaw agent to use via config YAML
-    openclaw_agent_id = config_dict.get("policy", {}).get("openclaw_agent_id")
+    policy_cfg = config_dict.get("policy", {})
+    openclaw_agent_id = policy_cfg.get("openclaw_agent_id")
+    tool_proxy_enabled = bool(policy_cfg.get("tool_proxy_enabled", True))
     setup_agent = SetupAgent(
         backend=setup_backend,
         model=args.setup_model or args.model,
         timeout=args.timeout_seconds * 2,
         mcp_config_path=mcp_config,
         openclaw_agent_id=openclaw_agent_id,
+        tool_proxy_enabled=tool_proxy_enabled,
     )
 
     cycle = 0
