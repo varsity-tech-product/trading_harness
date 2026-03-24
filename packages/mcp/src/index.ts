@@ -27,14 +27,12 @@ import { all as registrationTools } from "./tools/platform-registration.js";
 import { all as leaderboardTools } from "./tools/platform-leaderboard.js";
 import { all as profileTools } from "./tools/platform-profile.js";
 import { all as socialTools } from "./tools/platform-social.js";
-import { all as notificationTools } from "./tools/platform-notifications.js";
 import { all as systemTools } from "./tools/platform-system.js";
-import { all as hubTools } from "./tools/platform-hub.js";
 import { all as seasonTools } from "./tools/platform-seasons.js";
 import { all as liveTools } from "./tools/platform-live.js";
-import { all as predictionTools } from "./tools/platform-predictions.js";
 import { all as compositeTools } from "./tools/platform-composite.js";
 import { all as setupTools } from "./tools/platform-setup.js";
+import { all as agentTools } from "./tools/platform-agent.js";
 
 export function createServer(arenaRoot?: string): McpServer {
   const root = arenaRoot ?? findArenaRoot();
@@ -60,14 +58,12 @@ export function createServer(arenaRoot?: string): McpServer {
     ...leaderboardTools,
     ...profileTools,
     ...socialTools,
-    ...notificationTools,
     ...systemTools,
-    ...hubTools,
     ...seasonTools,
     ...liveTools,
-    ...predictionTools,
     ...compositeTools,
     ...setupTools,
+    ...agentTools,
   ];
 
   for (const tool of forwardedTools) {

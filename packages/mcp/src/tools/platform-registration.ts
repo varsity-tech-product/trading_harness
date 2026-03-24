@@ -3,9 +3,9 @@ import { z } from "zod";
 export const register = {
   name: "arena.register",
   description:
-    "Register for a competition. Must be in 'registration_open' state.",
+    "Register for an agent competition. Must be in 'registration_open' state.",
   inputSchema: z.object({
-    competition_id: z.number().int().describe("Competition ID."),
+    slug: z.string().describe("Competition slug."),
   }),
   pythonTool: "varsity.register",
 };
@@ -13,9 +13,9 @@ export const register = {
 export const withdraw = {
   name: "arena.withdraw",
   description:
-    "Withdraw registration from a competition (before it goes live).",
+    "Withdraw registration from an agent competition (before it goes live).",
   inputSchema: z.object({
-    competition_id: z.number().int().describe("Competition ID."),
+    slug: z.string().describe("Competition slug."),
   }),
   pythonTool: "varsity.withdraw",
 };

@@ -1,0 +1,97 @@
+competition_id: 1
+symbol: BTCUSDT
+interval: 1m
+tick_interval_seconds: 30
+kline_limit: 120
+orderbook_depth: 20
+max_iterations: null
+stop_when_competition_inactive: true
+error_backoff_seconds: 5
+dry_run: false
+adapter_retry_attempts: 3
+adapter_retry_backoff_seconds: 0.5
+adapter_min_call_spacing_seconds: 0
+policy:
+  type: rule
+  backend: openclaw
+  indicator_mode: custom
+  signal_indicators:
+    - indicator: SMA
+      params:
+        timeperiod: 20
+    - indicator: SMA
+      params:
+        timeperiod: 50
+    - indicator: RSI
+      params:
+        timeperiod: 14
+    - indicator: ATR
+      params:
+        timeperiod: 14
+    - indicator: MACD
+    - indicator: BBANDS
+      params:
+        timeperiod: 20
+    - indicator: ADX
+      params:
+        timeperiod: 14
+    - indicator: OBV
+  timeout_seconds: 60
+  recent_transition_limit: 5
+  fail_open_to_hold: true
+  sandbox_mode: read-only
+  bootstrap_from_transition_log: true
+  strategy_context: active_momentum
+  openclaw_agent_id: arena-trader
+  tool_proxy_enabled: true
+  extra_instructions: 'A core set of indicators (SMA 20/50, RSI 14, ATR 14, MACD,
+    BBANDS, ADX, OBV) is pre-computed in the features section. If you need
+    additional indicators, include an "indicators" field in your action metadata
+    with a list of {"indicator": "NAME", "params": {...}} objects — they will
+    appear next tick. Be decisive. Consecutive HOLDs waste opportunity in a
+    time-limited competition. A strategy layer handles position sizing
+    (volatility-scaled) and TP/SL placement (ATR-based with min 0.5% distance)
+    automatically. Focus on direction and timing — the strategy refines your
+    size and TP/SL. A trailing stop and drawdown exit also run automatically.'
+strategy:
+  sizing:
+    type: volatility_scaled
+    target_risk_pct: 0.02
+    atr_multiplier: 2
+  tpsl:
+    type: atr_multiple
+    atr_tp_mult: 2
+    atr_sl_mult: 2
+    min_sl_pct: 0.005
+  entry_filters:
+    - type: trade_budget
+      min_remaining_trades: 5
+  exit_rules:
+    - type: trailing_stop
+      atr_multiplier: 2
+    - type: drawdown_exit
+      max_drawdown_pct: 0.02
+risk_limits:
+  max_position_size_pct: 0.1
+  min_size: 0.001
+  quantity_precision: 3
+  price_precision: 2
+  max_trades: 1000
+  min_seconds_between_trades: 60
+  allow_long: true
+  allow_short: true
+storage:
+  transition_path: ./artifacts/transitions_live_test.jsonl
+  journal_path: ./artifacts/journal_live_test.jsonl
+  max_in_memory_transitions: 1000
+observability:
+  enabled: true
+  host: 127.0.0.1
+  port: 8767
+  max_transitions: 20
+  max_logs: 50
+  no_transition_threshold_seconds: 90
+  no_transition_error_threshold_seconds: 180
+  max_decision_latency_seconds: 30
+  max_consecutive_runtime_errors: 3
+  supervisor_stop_on_error: true

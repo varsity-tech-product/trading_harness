@@ -143,12 +143,12 @@ def participants(identifier: str, page: int = 1, size: int = 50):
 # ── Registration ──────────────────────────────────────────────────────────
 
 
-def register(competition_id: int):
-    return varsity_tools.register_competition(competition_id)
+def register(slug: str):
+    return varsity_tools.register_competition(slug)
 
 
-def withdraw(competition_id: int):
-    return varsity_tools.withdraw_competition(competition_id)
+def withdraw(slug: str):
+    return varsity_tools.withdraw_competition(slug)
 
 
 def my_registration(competition_id: int):
@@ -174,56 +174,38 @@ def season_leaderboard(
     return varsity_tools.get_season_leaderboard(season_id, page, size)
 
 
-# ── Profile & History ─────────────────────────────────────────────────────
+# ── Agent Identity ────────────────────────────────────────────────────────
 
 
-def my_profile():
-    return varsity_tools.get_my_profile()
+def agent_info():
+    return varsity_tools.get_agent_info()
+
+
+def update_agent(name: Optional[str] = None, bio: Optional[str] = None):
+    return varsity_tools.update_agent(name=name, bio=bio)
+
+
+def deactivate_agent():
+    return varsity_tools.deactivate_agent()
+
+
+def regenerate_api_key():
+    return varsity_tools.regenerate_api_key()
+
+
+def agent_profile(agent_id: str):
+    return varsity_tools.get_agent_profile(agent_id)
+
+
+# ── History & Registrations ──────────────────────────────────────────────
 
 
 def my_history(page: int = 1, size: int = 10):
     return varsity_tools.get_my_history(page, size)
 
 
-def achievements():
-    return varsity_tools.get_achievements()
-
-
-def public_profile(username: str):
-    return varsity_tools.get_public_profile(username)
-
-
-def public_history(username: str, page: int = 1, size: int = 10):
-    return varsity_tools.get_public_history(username, page, size)
-
-
 def my_history_detail(competition_id: int):
     return varsity_tools.get_my_history_detail(competition_id)
-
-
-def update_profile(
-    username: Optional[str] = None,
-    display_name: Optional[str] = None,
-    bio: Optional[str] = None,
-    country: Optional[str] = None,
-    participant_type: Optional[str] = None,
-):
-    fields = {k: v for k, v in dict(
-        username=username, display_name=display_name, bio=bio,
-        country=country, participant_type=participant_type,
-    ).items() if v is not None}
-    return varsity_tools.update_my_profile(**fields)
-
-
-# ── Hub & Dashboard ──────────────────────────────────────────────────────
-
-
-def hub():
-    return varsity_tools.get_hub()
-
-
-def arena_profile():
-    return varsity_tools.get_arena_profile()
 
 
 def my_registrations():
@@ -260,23 +242,8 @@ def live_account(competition_id: int):
     return varsity_tools.get_live_account(competition_id)
 
 
-# ── Predictions & Polls ──────────────────────────────────────────────────
-
-
-def predictions(competition_id: int):
-    return varsity_tools.get_predictions(competition_id)
-
-
-def submit_prediction(competition_id: int, direction: str, confidence: int):
-    return varsity_tools.submit_prediction(competition_id, direction, confidence)
-
-
-def polls(competition_id: int):
-    return varsity_tools.get_polls(competition_id)
-
-
-def vote_poll(competition_id: int, poll_id: int, option_index: int):
-    return varsity_tools.vote_poll(competition_id, poll_id, option_index)
+def live_info(competition_id: int):
+    return varsity_tools.get_live_info(competition_id)
 
 
 # ── Social ────────────────────────────────────────────────────────────────
@@ -293,32 +260,6 @@ def chat_history(
     before_id: Optional[int] = None,
 ):
     return varsity_tools.get_chat_history(competition_id, size, before, before_id)
-
-
-# ── Notifications ─────────────────────────────────────────────────────────
-
-
-def notifications(page: int = 1, size: int = 20):
-    return varsity_tools.get_notifications(page, size)
-
-
-def unread_count():
-    return varsity_tools.get_unread_notification_count()
-
-
-def mark_read(notification_id: int):
-    return varsity_tools.mark_notification_read(notification_id)
-
-
-def mark_all_read():
-    return varsity_tools.mark_all_notifications_read()
-
-
-# ── Behaviour Events ─────────────────────────────────────────────────────
-
-
-def track_event(competition_id: int, event_type: str, payload: Optional[dict] = None):
-    return varsity_tools.track_event(competition_id, event_type, payload)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -429,33 +370,29 @@ def setup_record(
 
 
 def my_status(competition_id: Optional[int] = None):
-    """Full agent dashboard in one call: account, position, rank, competition, notifications."""
+    """Full agent dashboard in one call: agent info, account, position, rank, registrations."""
     result: dict = {}
 
-    # Hub gives us active competition, registrations, season, stats, unread count
+    # Agent identity
     try:
-        hub_data = varsity_tools.get_hub()
-        if isinstance(hub_data, dict) and hub_data.get("code") is None:
-            result["season"] = hub_data.get("season")
-            result["quick_stats"] = hub_data.get("quickStats")
-            result["unread_notifications"] = hub_data.get("unreadNotificationCount", 0)
-            result["recent_results"] = hub_data.get("recentResults", [])
-            result["registrations"] = hub_data.get("myRegistrations", [])
-
-            # Auto-detect competition_id from active competition or first registration
-            if not competition_id:
-                active = hub_data.get("activeCompetition")
-                if active and isinstance(active, dict):
-                    competition_id = active.get("competitionId") or active.get("id")
-                elif hub_data.get("myRegistrations"):
-                    for reg in hub_data["myRegistrations"]:
-                        if reg.get("competitionStatus") in ("live", "registration_closed"):
-                            competition_id = reg.get("competitionId")
-                            break
-        else:
-            result["hub_error"] = hub_data
+        agent = varsity_tools.get_agent_info()
+        if isinstance(agent, dict) and agent.get("code") is None:
+            result["agent"] = agent
     except Exception as e:
-        result["hub_error"] = str(e)
+        result["agent_error"] = str(e)
+
+    # Registrations — also used to auto-detect competition_id
+    try:
+        regs = varsity_tools.get_my_registrations()
+        if isinstance(regs, list):
+            result["registrations"] = regs
+            if not competition_id:
+                for reg in regs:
+                    if reg.get("competitionStatus") in ("live", "registration_closed"):
+                        competition_id = reg.get("competitionId")
+                        break
+    except Exception as e:
+        result["registrations_error"] = str(e)
 
     # If we have a competition, get account + position + rank
     if competition_id:
@@ -497,10 +434,7 @@ def best_competition():
         try:
             comps = varsity_tools.get_competitions(status=status)
             items = comps.get("list", []) if isinstance(comps, dict) else []
-            for c in items:
-                if not c.get("allowApiWrite", True) and status == "live":
-                    continue  # Skip live comps that don't allow API trading
-                candidates.append(c)
+            candidates.extend(items)
         except Exception:
             pass
 
@@ -531,9 +465,6 @@ def best_competition():
             score += 50
         # Higher prize pool = better
         score += (c.get("prizePool") or 0) / 10
-        # API-writable is essential for agents
-        if c.get("allowApiWrite"):
-            score += 200
         # Fewer participants = easier to rank
         registered = c.get("registeredCount", 0)
         max_p = c.get("maxParticipants", 50)
@@ -565,6 +496,7 @@ def best_competition():
         "found": True,
         "recommendation": {
             "id": comp_id,
+            "slug": detail.get("slug") or best.get("slug"),
             "title": detail.get("title") or best.get("title"),
             "status": detail.get("status") or best.get("status"),
             "symbol": detail.get("symbol") or best.get("symbol"),
@@ -574,7 +506,6 @@ def best_competition():
             "min_tier": detail.get("requireMinTier"),
             "min_season_points": detail.get("requireMinSeasonPoints"),
             "invite_only": detail.get("inviteOnly", False),
-            "api_write_allowed": detail.get("allowApiWrite", best.get("allowApiWrite")),
         },
         "reward": {
             "prize_pool": detail.get("prizePool") or best.get("prizePool"),
@@ -607,24 +538,25 @@ def auto_join():
         return pick
 
     comp_id = pick["recommendation"]["id"]
+    slug = pick["recommendation"].get("slug") or str(comp_id)
     status = pick["recommendation"]["status"]
 
     if status not in ("registration_open",):
         return {
             "joined": False,
-            "reason": f"Best competition #{comp_id} is '{status}' — cannot register yet.",
+            "reason": f"Best competition '{slug}' is '{status}' — cannot register yet.",
             "recommendation": pick["recommendation"],
         }
 
     if pick["entry_requirements"].get("invite_only"):
         return {
             "joined": False,
-            "reason": f"Competition #{comp_id} is invite-only.",
+            "reason": f"Competition '{slug}' is invite-only.",
             "recommendation": pick["recommendation"],
         }
 
     try:
-        result = varsity_tools.register_competition(comp_id)
+        result = varsity_tools.register_competition(slug)
         if isinstance(result, dict) and result.get("code") is not None and result["code"] != 0:
             return {
                 "joined": False,
@@ -634,6 +566,7 @@ def auto_join():
         return {
             "joined": True,
             "competition_id": comp_id,
+            "slug": slug,
             "title": pick["recommendation"]["title"],
             "registration": result,
             "reward": pick["reward"],

@@ -29,4 +29,14 @@ export const liveAccount = {
   pythonTool: "varsity.live_account",
 };
 
-export const all = [liveTrades, livePosition, liveAccount] as const;
+export const liveInfo = {
+  name: "arena.live_info",
+  description:
+    "Get competition metadata: status, times, trade limits for a live match.",
+  inputSchema: z.object({
+    competition_id: z.number().int().describe("Competition ID."),
+  }),
+  pythonTool: "varsity.live_info",
+};
+
+export const all = [liveTrades, livePosition, liveAccount, liveInfo] as const;

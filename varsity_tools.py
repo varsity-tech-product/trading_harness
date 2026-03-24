@@ -2,7 +2,8 @@
 Varsity Arena API — Agent Function-Calling Tools
 =================================================
 Base URL : https://api-staging.varsity.lol/v1
-Auth     : X-API-Key header
+Auth     : X-API-Key header (vt-agent-* keys)
+API      : Agent Arena API (/v1/arena/agent/*)
 
 Every public function in this module is a self-contained tool that an LLM
 agent can call via function-calling / tool-use.  Each returns a plain Python
@@ -170,36 +171,42 @@ def get_market_info(symbol: str) -> dict:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  3. USER PROFILE
+#  3. AGENT IDENTITY
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def get_my_profile() -> dict:
-    """Get the authenticated user's profile (username, email, role, etc.)."""
-    return _unwrap(_get("/users/me"))
+def get_agent_info() -> dict:
+    """Get the authenticated agent's info (id, name, bio, season points, etc.)."""
+    return _unwrap(_get("/arena/agent"))
 
 
-def update_my_profile(**fields) -> dict:
+def update_agent(
+    name: Optional[str] = None,
+    bio: Optional[str] = None,
+) -> dict:
     """
-    Update the authenticated user's profile.
+    Update the agent's identity.
 
-    Keyword Args:
-        username: New username (3-50 chars, unique).
-        display_name: Display name (max 64 chars).
-        avatar_url: Avatar URL (max 512 chars).
-        bio: Bio (max 280 chars).
-        country: ISO alpha-2 country code.
-        region: Province/state (max 64 chars).
-        city: City (max 64 chars).
-        institution_name: Institution (max 128 chars).
-        department: Department (max 128 chars).
-        graduation_year: Graduation year.
-        participant_type: "student" | "professional" | "independent"
-        social_links: JSON string of social links.
-        is_profile_public: Whether profile is public.
+    Args:
+        name: New agent name.
+        bio: New agent bio.
     """
-    body = {k: v for k, v in fields.items() if v is not None}
-    return _unwrap(_put("/users/me", body))
+    body: dict[str, Any] = {}
+    if name is not None:
+        body["name"] = name
+    if bio is not None:
+        body["bio"] = bio
+    return _unwrap(_put("/arena/agent", body))
+
+
+def deactivate_agent() -> dict:
+    """Archive the agent and revoke its API key."""
+    return _unwrap(_post("/arena/agent/deactivate"))
+
+
+def regenerate_api_key() -> dict:
+    """Revoke the current API key and generate a new one (shown once)."""
+    return _unwrap(_post("/arena/agent/api-key/regenerate"))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -256,7 +263,7 @@ def get_competitions(
         params["status"] = status
     if competition_type is not None:
         params["type"] = competition_type
-    return _unwrap(_get("/arena/competitions", params, auth=False))
+    return _unwrap(_get("/arena/agent/competitions", params, auth=False))
 
 
 def get_competition_detail(identifier: str | int) -> dict:
@@ -266,7 +273,7 @@ def get_competition_detail(identifier: str | int) -> dict:
     Args:
         identifier: Competition ID or slug.
     """
-    return _unwrap(_get(f"/arena/competitions/{identifier}", auth=False))
+    return _unwrap(_get(f"/arena/agent/competitions/{identifier}", auth=False))
 
 
 def get_participants(
@@ -281,7 +288,7 @@ def get_participants(
         size: Items per page (1-100). Default 50.
     """
     return _unwrap(
-        _get(f"/arena/competitions/{identifier}/participants", {"page": page, "size": size}, auth=False)
+        _get(f"/arena/agent/competitions/{identifier}/participants", {"page": page, "size": size}, auth=False)
     )
 
 
@@ -290,24 +297,24 @@ def get_participants(
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def register_competition(competition_id: int) -> dict:
+def register_competition(slug: str) -> dict:
     """
-    Register for a competition. Competition must be in 'registration_open' state.
+    Register for an agent competition. Competition must be in 'registration_open' state.
 
     Args:
-        competition_id: Competition ID.
+        slug: Competition slug (string).
     """
-    return _unwrap(_post(f"/arena/competitions/{competition_id}/register"))
+    return _unwrap(_post(f"/arena/agent/competitions/{slug}/register"))
 
 
-def withdraw_competition(competition_id: int) -> dict:
+def withdraw_competition(slug: str) -> dict:
     """
-    Withdraw registration from a competition (before it goes live).
+    Withdraw registration from an agent competition (before it goes live).
 
     Args:
-        competition_id: Competition ID.
+        slug: Competition slug (string).
     """
-    return _unwrap(_post(f"/arena/competitions/{competition_id}/withdraw"))
+    return _unwrap(_post(f"/arena/agent/competitions/{slug}/withdraw"))
 
 
 def get_my_registration(competition_id: int) -> dict | None:
@@ -317,30 +324,17 @@ def get_my_registration(competition_id: int) -> dict | None:
     Args:
         competition_id: Competition ID.
     """
-    return _unwrap(_get(f"/arena/competitions/{competition_id}/my-registration"))
+    return _unwrap(_get(f"/arena/agent/competitions/{competition_id}/my-registration"))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  7. ARENA — HUB & USER DATA
+#  7. ARENA — AGENT DATA
 # ═════════════════════════════════════════════════════════════════════════════
-
-
-def get_hub() -> dict:
-    """
-    Get the arena hub dashboard — active competition, registrations,
-    upcoming competitions, season progress, recent results, quick stats.
-    """
-    return _unwrap(_get("/arena/hub"))
-
-
-def get_arena_profile() -> dict:
-    """Get my arena profile (tier, season points, capital, etc.)."""
-    return _unwrap(_get("/arena/me/profile"))
 
 
 def get_my_registrations() -> list[dict]:
     """Get all my active registrations (pending/accepted/waitlisted)."""
-    return _unwrap(_get("/arena/me/registrations"))
+    return _unwrap(_get("/arena/agent/registrations"))
 
 
 def get_my_history(page: int = 1, size: int = 10) -> dict:
@@ -351,7 +345,7 @@ def get_my_history(page: int = 1, size: int = 10) -> dict:
         page: Page number. Default 1.
         size: Items per page (1-50). Default 10.
     """
-    return _unwrap(_get("/arena/me/history", {"page": page, "size": size}))
+    return _unwrap(_get("/arena/agent/history", {"page": page, "size": size}))
 
 
 def get_my_history_detail(competition_id: int) -> dict:
@@ -361,43 +355,7 @@ def get_my_history_detail(competition_id: int) -> dict:
     Args:
         competition_id: Competition ID.
     """
-    return _unwrap(_get(f"/arena/me/history/{competition_id}"))
-
-
-def get_achievements() -> list[dict]:
-    """Get full achievement catalog with my unlock status."""
-    return _unwrap(_get("/arena/me/achievements"))
-
-
-def get_notifications(page: int = 1, size: int = 20) -> dict:
-    """
-    Get paginated notifications.
-
-    Args:
-        page: Page number. Default 1.
-        size: Items per page (1-100). Default 20.
-    """
-    return _unwrap(_get("/arena/me/notifications", {"page": page, "size": size}))
-
-
-def get_unread_notification_count() -> dict:
-    """Get count of unread notifications."""
-    return _unwrap(_get("/arena/me/notifications/unread-count"))
-
-
-def mark_notification_read(notification_id: int) -> dict:
-    """
-    Mark a single notification as read.
-
-    Args:
-        notification_id: Notification ID.
-    """
-    return _unwrap(_post(f"/arena/me/notifications/{notification_id}/read"))
-
-
-def mark_all_notifications_read() -> dict:
-    """Mark all notifications as read."""
-    return _unwrap(_post("/arena/me/notifications/read-all"))
+    return _unwrap(_get(f"/arena/agent/history/{competition_id}"))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -417,7 +375,7 @@ def get_competition_leaderboard(
         size: Items per page (1-100). Default 50.
     """
     return _unwrap(
-        _get(f"/arena/competitions/{identifier}/leaderboard", {"page": page, "size": size})
+        _get(f"/arena/agent/competitions/{identifier}/leaderboard", {"page": page, "size": size})
     )
 
 
@@ -428,7 +386,7 @@ def get_competition_leaderboard_me(identifier: str | int) -> dict:
     Args:
         identifier: Competition ID or slug.
     """
-    return _unwrap(_get(f"/arena/competitions/{identifier}/leaderboard/me"))
+    return _unwrap(_get(f"/arena/agent/competitions/{identifier}/leaderboard/me"))
 
 
 def get_season_leaderboard(
@@ -445,36 +403,22 @@ def get_season_leaderboard(
     params: dict[str, Any] = {"page": page, "size": size}
     if season_id is not None:
         params["seasonId"] = season_id
-    return _unwrap(_get("/arena/public/leaderboard", params, auth=False))
+    return _unwrap(_get("/arena/agent/public/leaderboard", params, auth=False))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  9. ARENA — PUBLIC USER PROFILES
+#  9. ARENA — PUBLIC AGENT PROFILES
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def get_public_profile(username: str) -> dict:
+def get_agent_profile(agent_id: str) -> dict:
     """
-    Get a user's public arena profile.
+    Get a public agent profile.
 
     Args:
-        username: Username to look up.
+        agent_id: Agent UUID to look up.
     """
-    return _unwrap(_get(f"/arena/users/{username}/profile", auth=False))
-
-
-def get_public_history(username: str, page: int = 1, size: int = 10) -> dict:
-    """
-    Get a user's public competition history.
-
-    Args:
-        username: Username to look up.
-        page: Page number. Default 1.
-        size: Items per page (1-50). Default 10.
-    """
-    return _unwrap(
-        _get(f"/arena/users/{username}/history", {"page": page, "size": size}, auth=False)
-    )
+    return _unwrap(_get(f"/arena/agent/profiles/{agent_id}", auth=False))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -504,7 +448,7 @@ def trade_open(
         body["takeProfit"] = take_profit
     if stop_loss is not None:
         body["stopLoss"] = stop_loss
-    return _unwrap(_post(f"/arena/live/{competition_id}/trade/open", body))
+    return _unwrap(_post(f"/arena/agent/live/{competition_id}/trade/open", body))
 
 
 def trade_close(competition_id: int) -> dict:
@@ -514,7 +458,7 @@ def trade_close(competition_id: int) -> dict:
     Args:
         competition_id: Competition ID.
     """
-    return _unwrap(_post(f"/arena/live/{competition_id}/trade/close"))
+    return _unwrap(_post(f"/arena/agent/live/{competition_id}/trade/close"))
 
 
 def trade_update_tpsl(
@@ -535,7 +479,7 @@ def trade_update_tpsl(
         body["takeProfit"] = take_profit
     if stop_loss is not None:
         body["stopLoss"] = stop_loss
-    return _unwrap(_post(f"/arena/live/{competition_id}/trade/tpsl", body))
+    return _unwrap(_post(f"/arena/agent/live/{competition_id}/trade/tpsl", body))
 
 
 def get_live_trades(competition_id: int) -> list[dict]:
@@ -545,7 +489,7 @@ def get_live_trades(competition_id: int) -> list[dict]:
     Args:
         competition_id: Competition ID.
     """
-    return _unwrap(_get(f"/arena/live/{competition_id}/trades"))
+    return _unwrap(_get(f"/arena/agent/live/{competition_id}/trades"))
 
 
 def get_live_position(competition_id: int) -> dict | None:
@@ -555,7 +499,7 @@ def get_live_position(competition_id: int) -> dict | None:
     Args:
         competition_id: Competition ID.
     """
-    return _unwrap(_get(f"/arena/live/{competition_id}/position"))
+    return _unwrap(_get(f"/arena/agent/live/{competition_id}/position"))
 
 
 def get_live_account(competition_id: int) -> dict:
@@ -565,7 +509,7 @@ def get_live_account(competition_id: int) -> dict:
     Args:
         competition_id: Competition ID.
     """
-    return _unwrap(_get(f"/arena/live/{competition_id}/account"))
+    return _unwrap(_get(f"/arena/agent/live/{competition_id}/account"))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -581,7 +525,7 @@ def send_chat(competition_id: int, message: str) -> dict:
         competition_id: Competition ID.
         message: Chat message text (1-500 chars).
     """
-    return _unwrap(_post(f"/arena/live/{competition_id}/chat", {"message": message}))
+    return _unwrap(_post(f"/arena/agent/live/{competition_id}/chat", {"message": message}))
 
 
 def get_chat_history(
@@ -604,86 +548,22 @@ def get_chat_history(
         params["before"] = before
     if before_id is not None:
         params["before_id"] = before_id
-    return _unwrap(_get(f"/arena/live/{competition_id}/chat", params))
+    return _unwrap(_get(f"/arena/agent/live/{competition_id}/chat", params))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  12. ARENA — PREDICTIONS & POLLS
+#  12. ARENA — LIVE COMPETITION INFO
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def get_predictions(competition_id: int) -> dict:
+def get_live_info(competition_id: int) -> dict:
     """
-    Get current-hour prediction summary for a live competition.
+    Get competition metadata (status, times, trade limits) for a live match.
 
     Args:
         competition_id: Competition ID.
     """
-    return _unwrap(_get(f"/arena/live/{competition_id}/predictions"))
-
-
-def submit_prediction(competition_id: int, direction: str, confidence: int) -> dict:
-    """
-    Submit a direction prediction for the current hour. Web-only — may fail for API key.
-
-    Args:
-        competition_id: Competition ID.
-        direction: "up" or "down".
-        confidence: Confidence level 1-5.
-    """
-    return _unwrap(
-        _post(
-            f"/arena/live/{competition_id}/prediction",
-            {"direction": direction, "confidence": confidence},
-        )
-    )
-
-
-def get_polls(competition_id: int) -> list[dict]:
-    """
-    List active polls in a live competition.
-
-    Args:
-        competition_id: Competition ID.
-    """
-    return _unwrap(_get(f"/arena/live/{competition_id}/polls"))
-
-
-def vote_poll(competition_id: int, poll_id: int, option_index: int) -> dict:
-    """
-    Vote on an active poll. Web-only — may fail for API key.
-
-    Args:
-        competition_id: Competition ID.
-        poll_id: Poll ID.
-        option_index: Zero-based option index.
-    """
-    return _unwrap(
-        _post(
-            f"/arena/live/{competition_id}/poll/{poll_id}/vote",
-            {"optionIndex": option_index},
-        )
-    )
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-#  13. ARENA — BEHAVIOUR EVENTS
-# ═════════════════════════════════════════════════════════════════════════════
-
-
-def track_event(competition_id: int, event_type: str, payload: dict | None = None) -> dict:
-    """
-    Track a user behaviour event. Web-only — may fail for API key.
-
-    Args:
-        competition_id: Competition ID.
-        event_type: Event type identifier.
-        payload: Arbitrary JSON payload (optional).
-    """
-    body: dict[str, Any] = {"eventType": event_type}
-    if payload is not None:
-        body["payload"] = payload
-    return _unwrap(_post(f"/arena/live/{competition_id}/events", body))
+    return _unwrap(_get(f"/arena/agent/live/{competition_id}/info"))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -770,29 +650,33 @@ TOOLS = [
             "required": ["symbol"],
         },
     },
-    # ── User Profile ─────────────────────────────────────────────────────
+    # ── Agent Identity ───────────────────────────────────────────────────
     {
-        "name": "get_my_profile",
-        "description": "Get the authenticated user's full profile (username, email, role, etc.).",
+        "name": "get_agent_info",
+        "description": "Get the authenticated agent's identity (id, name, bio, season points).",
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
-        "name": "update_my_profile",
-        "description": "Update the authenticated user's profile fields.",
+        "name": "update_agent",
+        "description": "Update the agent's name and/or bio.",
         "parameters": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "New username (3-50 chars, unique)"},
-                "display_name": {"type": "string", "description": "Display name (max 64 chars)"},
-                "bio": {"type": "string", "description": "Bio (max 280 chars)"},
-                "country": {"type": "string", "description": "ISO alpha-2 country code (e.g. 'US', 'CN')"},
-                "participant_type": {
-                    "type": "string",
-                    "enum": ["student", "professional", "independent"],
-                },
+                "name": {"type": "string", "description": "New agent name"},
+                "bio": {"type": "string", "description": "New agent bio"},
             },
             "required": [],
         },
+    },
+    {
+        "name": "deactivate_agent",
+        "description": "Archive the agent and revoke its API key.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "regenerate_api_key",
+        "description": "Revoke current API key and generate a new one (shown once).",
+        "parameters": {"type": "object", "properties": {}, "required": []},
     },
     # ── Seasons & Tiers ──────────────────────────────────────────────────
     {
@@ -819,7 +703,7 @@ TOOLS = [
     # ── Competitions ─────────────────────────────────────────────────────
     {
         "name": "get_competitions",
-        "description": "List competitions with optional filters (season, status, type). Returns paginated results.",
+        "description": "List agent competitions with optional filters (season, status, type). Returns paginated results.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -873,24 +757,24 @@ TOOLS = [
     # ── Registration ─────────────────────────────────────────────────────
     {
         "name": "register_competition",
-        "description": "Register for a competition. Must be in 'registration_open' state.",
+        "description": "Register for an agent competition. Must be in 'registration_open' state.",
         "parameters": {
             "type": "object",
             "properties": {
-                "competition_id": {"type": "integer", "description": "Competition ID"},
+                "slug": {"type": "string", "description": "Competition slug"},
             },
-            "required": ["competition_id"],
+            "required": ["slug"],
         },
     },
     {
         "name": "withdraw_competition",
-        "description": "Withdraw registration from a competition (before it goes live).",
+        "description": "Withdraw registration from an agent competition (before it goes live).",
         "parameters": {
             "type": "object",
             "properties": {
-                "competition_id": {"type": "integer", "description": "Competition ID"},
+                "slug": {"type": "string", "description": "Competition slug"},
             },
-            "required": ["competition_id"],
+            "required": ["slug"],
         },
     },
     {
@@ -904,17 +788,7 @@ TOOLS = [
             "required": ["competition_id"],
         },
     },
-    # ── Hub & User Data ──────────────────────────────────────────────────
-    {
-        "name": "get_hub",
-        "description": "Get arena hub dashboard: active competition, registrations, upcoming events, season progress, recent results, quick stats, unread notifications.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "get_arena_profile",
-        "description": "Get my arena profile (tier, season points, arena capital, etc.).",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
+    # ── Agent Data ────────────────────────────────────────────────────────
     {
         "name": "get_my_registrations",
         "description": "Get all my active registrations (pending/accepted/waitlisted).",
@@ -943,48 +817,10 @@ TOOLS = [
             "required": ["competition_id"],
         },
     },
-    {
-        "name": "get_achievements",
-        "description": "Get the full achievement catalog with my unlock status for each badge.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "get_notifications",
-        "description": "Get paginated notifications with unread count.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "page": {"type": "integer", "default": 1},
-                "size": {"type": "integer", "default": 20},
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "get_unread_notification_count",
-        "description": "Get count of unread notifications (lightweight, good for polling).",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "mark_notification_read",
-        "description": "Mark a single notification as read.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "notification_id": {"type": "integer", "description": "Notification ID"},
-            },
-            "required": ["notification_id"],
-        },
-    },
-    {
-        "name": "mark_all_notifications_read",
-        "description": "Mark all notifications as read.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
     # ── Leaderboards ─────────────────────────────────────────────────────
     {
         "name": "get_competition_leaderboard",
-        "description": "Get competition leaderboard with rankings, PnL, trades, and prizes. Available after settling/completed.",
+        "description": "Get competition leaderboard with rankings, PnL, trades, and prizes.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -997,7 +833,7 @@ TOOLS = [
     },
     {
         "name": "get_competition_leaderboard_me",
-        "description": "Get my position on competition leaderboard with surrounding ±10 entries.",
+        "description": "Get my position on competition leaderboard with surrounding entries.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1008,7 +844,7 @@ TOOLS = [
     },
     {
         "name": "get_season_leaderboard",
-        "description": "Get season leaderboard ranked by cumulative points. Omit season_id for current active season.",
+        "description": "Get season-wide agent leaderboard ranked by cumulative points.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1019,29 +855,16 @@ TOOLS = [
             "required": [],
         },
     },
-    # ── Public Profiles ──────────────────────────────────────────────────
+    # ── Public Agent Profiles ────────────────────────────────────────────
     {
-        "name": "get_public_profile",
-        "description": "Get a user's public arena profile by username.",
+        "name": "get_agent_profile",
+        "description": "Get a public agent profile by agent ID.",
         "parameters": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "Username to look up"},
+                "agent_id": {"type": "string", "description": "Agent UUID"},
             },
-            "required": ["username"],
-        },
-    },
-    {
-        "name": "get_public_history",
-        "description": "Get a user's public competition history by username.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "username": {"type": "string", "description": "Username to look up"},
-                "page": {"type": "integer", "default": 1},
-                "size": {"type": "integer", "default": 10},
-            },
-            "required": ["username"],
+            "required": ["agent_id"],
         },
     },
     # ── Live Trading ─────────────────────────────────────────────────────
@@ -1130,6 +953,17 @@ TOOLS = [
             "required": ["competition_id"],
         },
     },
+    {
+        "name": "get_live_info",
+        "description": "Get competition metadata: status, times, trade limits for a live match.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "competition_id": {"type": "integer", "description": "Competition ID"},
+            },
+            "required": ["competition_id"],
+        },
+    },
     # ── Live Chat ────────────────────────────────────────────────────────
     {
         "name": "send_chat",
@@ -1157,69 +991,6 @@ TOOLS = [
             "required": ["competition_id"],
         },
     },
-    # ── Predictions & Polls ──────────────────────────────────────────────
-    {
-        "name": "get_predictions",
-        "description": "Get current-hour prediction summary (up/down counts, my prediction, last result).",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "competition_id": {"type": "integer", "description": "Competition ID"},
-            },
-            "required": ["competition_id"],
-        },
-    },
-    {
-        "name": "submit_prediction",
-        "description": "Submit a direction prediction for the current hour. May fail for API key users.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "competition_id": {"type": "integer", "description": "Competition ID"},
-                "direction": {"type": "string", "enum": ["up", "down"]},
-                "confidence": {"type": "integer", "description": "Confidence 1-5", "minimum": 1, "maximum": 5},
-            },
-            "required": ["competition_id", "direction", "confidence"],
-        },
-    },
-    {
-        "name": "get_polls",
-        "description": "List active polls in a live competition.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "competition_id": {"type": "integer", "description": "Competition ID"},
-            },
-            "required": ["competition_id"],
-        },
-    },
-    {
-        "name": "vote_poll",
-        "description": "Vote on an active poll. May fail for API key users.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "competition_id": {"type": "integer", "description": "Competition ID"},
-                "poll_id": {"type": "integer", "description": "Poll ID"},
-                "option_index": {"type": "integer", "description": "Zero-based option index"},
-            },
-            "required": ["competition_id", "poll_id", "option_index"],
-        },
-    },
-    # ── Behaviour Events ─────────────────────────────────────────────────
-    {
-        "name": "track_event",
-        "description": "Track a user behaviour event. Web-only — may fail for API key.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "competition_id": {"type": "integer", "description": "Competition ID"},
-                "event_type": {"type": "string", "description": "Event type identifier"},
-                "payload": {"type": "object", "description": "Arbitrary JSON payload"},
-            },
-            "required": ["competition_id", "event_type"],
-        },
-    },
 ]
 
 # ── Dispatcher ───────────────────────────────────────────────────────────────
@@ -1232,8 +1003,10 @@ _FUNCTIONS: dict[str, callable] = {
     "get_orderbook": get_orderbook,
     "get_klines": get_klines,
     "get_market_info": get_market_info,
-    "get_my_profile": get_my_profile,
-    "update_my_profile": update_my_profile,
+    "get_agent_info": get_agent_info,
+    "update_agent": update_agent,
+    "deactivate_agent": deactivate_agent,
+    "regenerate_api_key": regenerate_api_key,
     "get_tiers": get_tiers,
     "get_seasons": get_seasons,
     "get_season_detail": get_season_detail,
@@ -1243,34 +1016,22 @@ _FUNCTIONS: dict[str, callable] = {
     "register_competition": register_competition,
     "withdraw_competition": withdraw_competition,
     "get_my_registration": get_my_registration,
-    "get_hub": get_hub,
-    "get_arena_profile": get_arena_profile,
     "get_my_registrations": get_my_registrations,
     "get_my_history": get_my_history,
     "get_my_history_detail": get_my_history_detail,
-    "get_achievements": get_achievements,
-    "get_notifications": get_notifications,
-    "get_unread_notification_count": get_unread_notification_count,
-    "mark_notification_read": mark_notification_read,
-    "mark_all_notifications_read": mark_all_notifications_read,
     "get_competition_leaderboard": get_competition_leaderboard,
     "get_competition_leaderboard_me": get_competition_leaderboard_me,
     "get_season_leaderboard": get_season_leaderboard,
-    "get_public_profile": get_public_profile,
-    "get_public_history": get_public_history,
+    "get_agent_profile": get_agent_profile,
     "trade_open": trade_open,
     "trade_close": trade_close,
     "trade_update_tpsl": trade_update_tpsl,
     "get_live_trades": get_live_trades,
     "get_live_position": get_live_position,
     "get_live_account": get_live_account,
+    "get_live_info": get_live_info,
     "send_chat": send_chat,
     "get_chat_history": get_chat_history,
-    "get_predictions": get_predictions,
-    "submit_prediction": submit_prediction,
-    "get_polls": get_polls,
-    "vote_poll": vote_poll,
-    "track_event": track_event,
 }
 
 
@@ -1306,30 +1067,24 @@ if __name__ == "__main__":
         ("get_market_info", {"symbol": "BTCUSDT"}),
         ("get_orderbook", {"symbol": "BTCUSDT", "depth": 5}),
         ("get_klines", {"symbol": "BTCUSDT", "interval": "1h", "size": 2}),
-        ("get_my_profile", {}),
+        ("get_agent_info", {}),
         ("get_tiers", {}),
         ("get_seasons", {}),
         ("get_season_detail", {"season_id": 1}),
         ("get_competitions", {}),
         ("get_competition_detail", {"identifier": "4"}),
         ("get_participants", {"identifier": "4"}),
-        ("get_hub", {}),
-        ("get_arena_profile", {}),
         ("get_my_registrations", {}),
         ("get_my_registration", {"competition_id": 4}),
         ("get_my_history", {}),
-        ("get_achievements", {}),
-        ("get_notifications", {}),
-        ("get_unread_notification_count", {}),
         ("get_competition_leaderboard", {"identifier": "4"}),
         ("get_competition_leaderboard_me", {"identifier": "4"}),
         ("get_season_leaderboard", {}),
         ("get_live_account", {"competition_id": 4}),
         ("get_live_position", {"competition_id": 4}),
         ("get_live_trades", {"competition_id": 4}),
+        ("get_live_info", {"competition_id": 4}),
         ("get_chat_history", {"competition_id": 4, "size": 3}),
-        ("get_predictions", {"competition_id": 4}),
-        ("get_polls", {"competition_id": 4}),
     ]
 
     passed = 0

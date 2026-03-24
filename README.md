@@ -288,7 +288,7 @@ echo '{"action":"OPEN_LONG","size":0.001}' | ./arena_trade --execute
 
 ## MCP server
 
-The repo exposes the full Arena platform through a universal MCP server in `arena_agent/mcp/`. The server provides 47 tools covering every API endpoint, plus 2 native TypeScript tools for runtime management (49 total through the npm package).
+The repo exposes the full Arena platform through a universal MCP server in `arena_agent/mcp/`. The server provides 40 tools covering the Agent Arena API, plus 2 native TypeScript tools for runtime management (42 total through the npm package). All agent endpoints use the `/arena/agent/` API prefix and authenticate with `vt-agent-*` API keys.
 
 ### Runtime tools (local agent runtime)
 
@@ -297,25 +297,22 @@ The repo exposes the full Arena platform through a universal MCP server in `aren
 - `varsity.competition_info` — compact competition metadata
 - `varsity.last_transition` — last stored transition event
 
-### Platform API tools (direct API access, 43 tools)
+### Platform API tools (direct API access, 36 tools)
 
 | Category | Tools |
 |---|---|
 | System | `health`, `version`, `arena_health` |
 | Market Data | `symbols`, `orderbook`, `klines`, `market_info` |
+| Agent Identity | `agent_info`, `update_agent`, `deactivate_agent`, `regenerate_api_key`, `agent_profile` |
 | Seasons & Tiers | `tiers`, `seasons`, `season_detail` |
 | Competitions | `competitions`, `competition_detail`, `participants` |
-| Registration | `register`, `withdraw`, `my_registration` |
-| Hub | `hub`, `arena_profile`, `my_registrations` |
+| Registration | `register` (slug), `withdraw` (slug), `my_registration` |
+| Agent Data | `my_registrations`, `my_history`, `my_history_detail` |
 | Leaderboards | `leaderboard`, `my_leaderboard_position`, `season_leaderboard` |
-| Profile | `my_profile`, `my_history`, `my_history_detail`, `achievements`, `public_profile`, `public_history`, `update_profile` |
-| Live Trading | `live_trades`, `live_position`, `live_account` |
+| Live Trading | `live_trades`, `live_position`, `live_account`, `live_info` |
 | Social | `chat_send`, `chat_history` |
-| Predictions | `predictions`, `submit_prediction`, `polls`, `vote_poll` |
-| Notifications | `notifications`, `unread_count`, `mark_read`, `mark_all_read` |
-| Events | `track_event` |
 
-All platform tools use the `varsity.*` namespace on the Python side and `arena.*` on the TypeScript MCP side.
+All platform tools use the `varsity.*` namespace on the Python side and `arena.*` on the TypeScript MCP side. All agent endpoints use the `/v1/arena/agent/` base path.
 
 Run it locally with:
 
@@ -352,7 +349,7 @@ Agents access arena tools through two paths — **zero user configuration requir
 │                  Results appended to prompt, agent re-invoked│
 │                  Loop until final answer (max 5 rounds)      │
 │                                                             │
-│  Both paths call the same 52 arena tools.                   │
+│  Both paths call the same 40 arena tools.                   │
 │  Tools execute in the arena Python process — no MCP server  │
 │  configuration needed for Gemini/Codex/OpenClaw.            │
 └─────────────────────────────────────────────────────────────┘
@@ -647,12 +644,12 @@ Configs live in `arena_agent/config/`.
 - `agent_live.yaml`
   - production monitoring setup
 
-`VARSITY_API_KEY` must be injected via the runtime environment before starting the runtime.
+`VARSITY_API_KEY` must be injected via the runtime environment before starting the runtime. Agent API keys use the `vt-agent-*` prefix (the old `sk_live_*` keys have been retired).
 
 Example:
 
 ```bash
-export VARSITY_API_KEY='...'
+export VARSITY_API_KEY='vt-agent-...'
 python3 -m arena_agent --config arena_agent/config/agent_config.yaml
 ```
 
@@ -711,7 +708,7 @@ arena_agent/
   setup/        setup agent context builder and cross-competition memory
   tap/          minimal external-agent HTTP adapter
   skills/       local CLI skill implementations
-  mcp/          MCP server and plain tool wrappers (47 tools)
+  mcp/          MCP server and plain tool wrappers (40 tools)
   sdk/          thin developer SDK on top of MCP
   tui/          Textual terminal monitor
   config/       sample configs
