@@ -242,6 +242,17 @@ def _run_auto(argv: list[str]) -> None:
         cycle += 1
         log.info("=== Auto cycle %d ===", cycle)
 
+        # --- Pre-check: is the competition still active? ---
+        try:
+            import varsity_tools
+            comp_detail = varsity_tools.get_competition_detail(str(args.competition_id))
+            comp_status = comp_detail.get("status") if isinstance(comp_detail, dict) else None
+            if comp_status in ("completed", "settled", "cancelled", "ended_early"):
+                log.info("Competition %d is %s — stopping auto loop.", args.competition_id, comp_status)
+                break
+        except Exception as exc:
+            log.warning("Competition status check failed: %s — continuing", exc)
+
         # --- Setup phase ---
         try:
             context = build_setup_context(args.competition_id, config_dict, memory.recent(5))
