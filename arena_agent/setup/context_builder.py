@@ -20,6 +20,8 @@ def build_setup_context(
     *,
     inactivity_alert: bool = False,
     inactive_minutes: int = 0,
+    consecutive_hold_cycles: int = 0,
+    total_runtime_iterations: int = 0,
 ) -> dict[str, Any]:
     """Assemble everything the setup agent needs to make a decision."""
     context: dict[str, Any] = {}
@@ -119,6 +121,8 @@ def build_setup_context(
         "age_seconds": strategy_age_seconds,
         "age_minutes": round(strategy_age_seconds / 60, 1) if strategy_age_seconds else None,
         "last_check_interval": config.get("_last_next_check_seconds"),
+        "consecutive_hold_cycles": consecutive_hold_cycles,
+        "total_runtime_iterations_since_change": total_runtime_iterations,
     }
     context["current_config"] = {
         "strategy": config.get("strategy", {}),

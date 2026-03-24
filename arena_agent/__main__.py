@@ -239,7 +239,8 @@ def _run_auto(argv: list[str]) -> None:
 
     # --- Liveness state ---
     inactive_cycles = 0          # consecutive cycles with 0 executed trades
-    max_inactive_cycles = 6      # ~30 min at 5-min intervals → force strategy rotation
+    total_runtime_iterations = 0 # total iterations since last strategy change
+    max_inactive_cycles = 4      # ~20 min at 5-min intervals → trigger inactivity alert
     consecutive_setup_failures = 0
     max_setup_failures = 5       # apply fallback strategy after this many
     error_backoff = 5            # seconds, grows exponentially on crash
@@ -284,6 +285,8 @@ def _run_auto(argv: list[str]) -> None:
                     args.competition_id, config_dict, memory.recent(5),
                     inactivity_alert=inactive_cycles >= max_inactive_cycles,
                     inactive_minutes=round(inactive_cycles * args.setup_interval / 60),
+                    consecutive_hold_cycles=inactive_cycles,
+                    total_runtime_iterations=total_runtime_iterations,
                 )
                 # Propagate symbol from competition detail (asset-agnostic)
                 comp = context.get("competition", {})
@@ -317,6 +320,8 @@ def _run_auto(argv: list[str]) -> None:
                         acct = context.get("account_state", {})
                         config_dict["_strategy_start_trade_count"] = acct.get("trade_count", 0) if isinstance(acct, dict) else 0
                         config_dict["_strategy_start_time"] = time.time()
+                        inactive_cycles = 0
+                        total_runtime_iterations = 0
                     _deep_merge(config_dict, decision.overrides)
                     eff_policy = config_dict.get("policy", {})
                     log.info(
@@ -348,7 +353,9 @@ def _run_auto(argv: list[str]) -> None:
                 config_dict["policy"] = dict(_FALLBACK_STRATEGY["policy"])
                 config_dict["strategy"] = dict(_FALLBACK_STRATEGY["strategy"])
                 config_dict["_strategy_start_time"] = time.time()
-                consecutive_setup_failures = 0  # reset after applying fallback
+                consecutive_setup_failures = 0
+                inactive_cycles = 0
+                total_runtime_iterations = 0
 
             if stop_requested:
                 break
@@ -388,10 +395,12 @@ def _run_auto(argv: list[str]) -> None:
                 report = None
 
             # --- Inactivity watchdog ---
-            if report is not None and report.executed_actions == 0:
-                inactive_cycles += 1
-            elif report is not None:
-                inactive_cycles = 0
+            if report is not None:
+                total_runtime_iterations += report.iterations
+                if report.executed_actions == 0:
+                    inactive_cycles += 1
+                else:
+                    inactive_cycles = 0
 
             if inactive_cycles >= max_inactive_cycles:
                 log.warning(

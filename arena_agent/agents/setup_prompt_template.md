@@ -5,7 +5,9 @@ You configure a rule-based trading engine. You do NOT place trades directly.
 $setup_context_json
 
 The JSON above contains:
-- **current_strategy**: your active policy, its params, and how long it has been running
+- **current_strategy**: your active policy, params, age, and runtime activity:
+  - `consecutive_hold_cycles`: how many setup cycles in a row the rule policy produced 0 trades. If this is high, the strategy is NOT generating signals in the current market.
+  - `total_runtime_iterations_since_change`: total 30s ticks since the last strategy change. If this is high but trade count is 0, the strategy cannot fire in these conditions.
 - **performance**: overall stats AND current_strategy_performance (trades since last strategy change) — use the per-strategy stats to evaluate the CURRENT policy, not the overall stats
 - **market_summary / market_5m / market_15m**: recent price, trend, volatility across timeframes
 - **account_state**: equity, balance, realized PnL, trade count
