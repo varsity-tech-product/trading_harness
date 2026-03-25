@@ -21,11 +21,10 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
     mcp = FastMCP(
         "varsity-arena",
         instructions=(
-            "Varsity Arena agent toolkit — full platform access. "
+            "Varsity Arena agent toolkit — Agent Arena API. "
             "Market data, competitions, registration, live trading, leaderboards, "
-            "profiles, chat, predictions, notifications, seasons, and system health. "
-            "Use arena.* tools for the autonomous runtime, varsity.* tools for "
-            "direct API access."
+            "agent identity, chat, seasons, and system health. "
+            "All agent endpoints use /arena/agent/ prefix with vt-agent-* keys."
         ),
         host=host,
         port=port,
@@ -158,11 +157,29 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
     ) -> dict:
         return tools.season_leaderboard(season_id, page, size)
 
-    # ── Profile & History ────────────────────────────────────────────────
+    # ── Agent Identity ──────────────────────────────────────────────────
 
-    @mcp.tool(name="varsity.my_profile", description="Get the authenticated user's full profile (username, email, role, etc.).")
-    def my_profile() -> dict:
-        return tools.my_profile()
+    @mcp.tool(name="varsity.agent_info", description="Get the authenticated agent's identity (id, name, bio, season points).")
+    def agent_info() -> dict:
+        return tools.agent_info()
+
+    @mcp.tool(name="varsity.update_agent", description="Update the agent's name and/or bio.")
+    def update_agent(name: Optional[str] = None, bio: Optional[str] = None) -> dict:
+        return tools.update_agent(name=name, bio=bio)
+
+    @mcp.tool(name="varsity.deactivate_agent", description="Archive the agent and revoke its API key.")
+    def deactivate_agent() -> dict:
+        return tools.deactivate_agent()
+
+    @mcp.tool(name="varsity.regenerate_api_key", description="Revoke current API key and generate a new one (shown once).")
+    def regenerate_api_key() -> dict:
+        return tools.regenerate_api_key()
+
+    @mcp.tool(name="varsity.agent_profile", description="Get a public agent profile by agent ID.")
+    def agent_profile(agent_id: str) -> dict:
+        return tools.agent_profile(agent_id)
+
+    # ── History & Registrations ──────────────────────────────────────────
 
     @mcp.tool(name="varsity.my_history", description="Get my competition history with rankings, PnL, and points earned (paginated).")
     def my_history(page: int = 1, size: int = 10) -> dict:
@@ -171,41 +188,6 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
     @mcp.tool(name="varsity.my_history_detail", description="Get detailed result for a specific past competition including trade-level breakdown.")
     def my_history_detail(competition_id: int) -> dict:
         return tools.my_history_detail(competition_id)
-
-    @mcp.tool(name="varsity.achievements", description="Get the full achievement catalog with my unlock status for each badge.")
-    def achievements() -> dict:
-        return tools.achievements()
-
-    @mcp.tool(name="varsity.public_profile", description="Get a user's public arena profile by username.")
-    def public_profile(username: str) -> dict:
-        return tools.public_profile(username)
-
-    @mcp.tool(name="varsity.public_history", description="Get a user's public competition history by username.")
-    def public_history(username: str, page: int = 1, size: int = 10) -> dict:
-        return tools.public_history(username, page, size)
-
-    @mcp.tool(name="varsity.update_profile", description="Update the authenticated user's profile fields.")
-    def update_profile(
-        username: Optional[str] = None,
-        display_name: Optional[str] = None,
-        bio: Optional[str] = None,
-        country: Optional[str] = None,
-        participant_type: Optional[str] = None,
-    ) -> dict:
-        return tools.update_profile(
-            username=username, display_name=display_name,
-            bio=bio, country=country, participant_type=participant_type,
-        )
-
-    # ── Hub & Dashboard ──────────────────────────────────────────────────
-
-    @mcp.tool(name="varsity.hub", description="Get arena hub dashboard: active competition, registrations, upcoming events, season progress, recent results, quick stats.")
-    def hub() -> dict:
-        return tools.hub()
-
-    @mcp.tool(name="varsity.arena_profile", description="Get my arena profile (tier, season points, arena capital, etc.).")
-    def arena_profile() -> dict:
-        return tools.arena_profile()
 
     @mcp.tool(name="varsity.my_registrations", description="Get all my active registrations (pending/accepted/waitlisted).")
     def my_registrations() -> dict:
@@ -239,23 +221,9 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
     def live_account(competition_id: int) -> dict:
         return tools.live_account(competition_id)
 
-    # ── Predictions & Polls ──────────────────────────────────────────────
-
-    @mcp.tool(name="varsity.predictions", description="Get current-hour prediction summary (up/down counts, my prediction, last result).")
-    def predictions(competition_id: int) -> dict:
-        return tools.predictions(competition_id)
-
-    @mcp.tool(name="varsity.submit_prediction", description="Submit a direction prediction for the current hour.")
-    def submit_prediction(competition_id: int, direction: str, confidence: int) -> dict:
-        return tools.submit_prediction(competition_id, direction, confidence)
-
-    @mcp.tool(name="varsity.polls", description="List active polls in a live competition.")
-    def polls(competition_id: int) -> dict:
-        return tools.polls(competition_id)
-
-    @mcp.tool(name="varsity.vote_poll", description="Vote on an active poll.")
-    def vote_poll(competition_id: int, poll_id: int, option_index: int) -> dict:
-        return tools.vote_poll(competition_id, poll_id, option_index)
+    @mcp.tool(name="varsity.live_info", description="Get competition metadata: status, times, trade limits for a live match.")
+    def live_info(competition_id: int) -> dict:
+        return tools.live_info(competition_id)
 
     # ── Social ───────────────────────────────────────────────────────────
 
@@ -271,30 +239,6 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
         before_id: Optional[int] = None,
     ) -> dict:
         return tools.chat_history(competition_id, size, before, before_id)
-
-    # ── Notifications ────────────────────────────────────────────────────
-
-    @mcp.tool(name="varsity.notifications", description="Get paginated notifications.")
-    def notifications(page: int = 1, size: int = 20) -> dict:
-        return tools.notifications(page, size)
-
-    @mcp.tool(name="varsity.unread_count", description="Get count of unread notifications (lightweight, good for polling).")
-    def unread_count() -> dict:
-        return tools.unread_count()
-
-    @mcp.tool(name="varsity.mark_read", description="Mark a single notification as read.")
-    def mark_read(notification_id: int) -> dict:
-        return tools.mark_read(notification_id)
-
-    @mcp.tool(name="varsity.mark_all_read", description="Mark all notifications as read.")
-    def mark_all_read() -> dict:
-        return tools.mark_all_read()
-
-    # ── Behaviour Events ─────────────────────────────────────────────────
-
-    @mcp.tool(name="varsity.track_event", description="Track a user behaviour event.")
-    def track_event(competition_id: int, event_type: str, payload: Optional[dict] = None) -> dict:
-        return tools.track_event(competition_id, event_type, payload)
 
     # ── Composite tools (higher-level, combine multiple API calls) ────────
 

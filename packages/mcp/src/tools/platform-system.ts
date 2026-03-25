@@ -22,18 +22,4 @@ export const arenaHealth = {
   pythonTool: "varsity.arena_health",
 };
 
-export const trackEvent = {
-  name: "arena.track_event",
-  description: "Track a user behaviour event.",
-  inputSchema: z.object({
-    competition_id: z.number().int().describe("Competition ID."),
-    event_type: z.string().describe("Event type identifier."),
-    payload: z
-      .record(z.unknown())
-      .optional()
-      .describe("Arbitrary JSON payload."),
-  }),
-  pythonTool: "varsity.track_event",
-};
-
-export const all = [health, version, arenaHealth, trackEvent] as const;
+export const all = [health, version, arenaHealth] as const;
