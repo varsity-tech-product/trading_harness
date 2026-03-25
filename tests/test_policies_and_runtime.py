@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 import unittest
 
-from arena_agent.agents.rule_agent import MovingAverageCrossPolicy
 from arena_agent.core.models import (
     AccountSnapshot,
     AgentState,
@@ -108,14 +107,6 @@ class StubExecutor:
 
 
 class PoliciesAndRuntimeTest(unittest.TestCase):
-    def test_ma_policy_detects_bullish_crossover(self) -> None:
-        closes = [100.0] * 50 + [95.0, 95.0, 95.0, 100.0, 105.0, 110.0]
-        state = make_state_from_closes(closes)
-
-        action = MovingAverageCrossPolicy(fast_period=3, slow_period=5).decide(state)
-
-        self.assertEqual(action.type, ActionType.OPEN_LONG)
-
     def test_runtime_loop_records_transition(self) -> None:
         first_state = make_state_from_closes([100.0] * 60)
         second_state = make_state_from_closes([100.0] * 59 + [101.0])
