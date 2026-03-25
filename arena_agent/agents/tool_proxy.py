@@ -215,6 +215,9 @@ def execute_tool_calls(
     for call in calls[:max_per_round]:
         name = call["tool"]
         args = call["args"]
+        # Cap kline requests to last 20 candles to keep context small
+        if name == "get_klines" and args.get("size", 0) > 20:
+            args["size"] = 20
         logger.info("Executing tool: %s(%s)", name, json.dumps(args, default=str)[:200])
         try:
             result = varsity_tools.dispatch(name, **args)
