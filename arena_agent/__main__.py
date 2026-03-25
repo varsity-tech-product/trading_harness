@@ -373,7 +373,8 @@ def _run_auto(argv: list[str]) -> None:
                         log.info("Chat sent: %s", decision.chat_message[:100])
                     except Exception as exc:
                         log.warning("Failed to send chat: %s", exc)
-                next_check = decision.next_check_seconds or args.setup_interval
+                min_next_check = 600  # 10 min floor — prevent rapid-fire LLM calls
+                next_check = max(decision.next_check_seconds or args.setup_interval, min_next_check)
                 config_dict["_last_next_check_seconds"] = next_check
             except Exception as exc:
                 log.warning("Setup agent failed: %s — using defaults", exc)
