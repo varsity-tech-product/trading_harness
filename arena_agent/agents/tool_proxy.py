@@ -259,7 +259,7 @@ class ToolProxyConfig:
     max_rounds: int = 5
     max_tools_per_round: int = 3
     max_result_chars: int = 4000
-    max_total_appended_chars: int = 40_000
+    max_total_appended_chars: int = 80_000
     context_type: str = "setup"  # "setup" or "runtime"
 
 
