@@ -18,14 +18,14 @@ The JSON above contains:
 Return a JSON object (NO markdown, NO explanation — raw JSON only) with these fields:
 
 - "action": "update" or "hold"
-- "policy": one of "ma_crossover", "rsi_mean_reversion", "channel_breakout", "ensemble"
-- "policy_params": { param: value } — exact params for your chosen policy
+- "policy": "expression" or "ensemble" (all strategies use the expression engine — the label is for your bookkeeping only)
+- "policy_params": { "entry_long": "...", "entry_short": "...", "exit": "..." } — expression strings
 - "indicators": ["SMA_20", "RSI_14", ...] — indicators to compute (NAME_PERIOD format)
 - "tp_pct": take profit % (0.1-5.0)
 - "sl_pct": stop loss % (0.1-3.0)
 - "sizing_fraction": position size as % of equity (1-50)
 - "reason": short explanation
-- "next_check_seconds": 60-3600
+- "next_check_seconds": 600-3600 (minimum 10 minutes, enforced by runtime)
 - "cooldown_seconds": (optional) override the strategy change cooldown period (60-3600)
 
 For "hold", only "action" and "reason" are required.
@@ -43,6 +43,13 @@ Available variables in expressions:
 - Any subscribed indicator: `rsi_14`, `sma_20`, `sma_50`, `macd_hist`, `macd_signal`, `bbands_upper`, `bbands_lower`, `atr_14`, `cci_20`, `obv`, `adx_14`, etc.
 - Market data: `close`, `high`, `low`, `open`, `volume`
 - Operators: `<`, `>`, `<=`, `>=`, `==`, `!=`, `and`, `or`, `not`, `+`, `-`, `*`, `/`
+
+IMPORTANT — Expressions are validated via safe AST parsing. Do NOT use:
+- Function calls: `abs(x)`, `max(x,y)`, `min(x,y)` — NOT allowed
+- Python builtins: `len()`, `round()`, `int()` — NOT allowed
+- String operations or subscripts — NOT allowed
+- Only comparisons, boolean ops, arithmetic, numbers, and variable names are allowed.
+Use arithmetic instead: `(rsi_14 - 50) * (rsi_14 - 50) > 100` instead of `abs(rsi_14 - 50) > 10`
 
 Subscribe the indicators your expressions need via the "indicators" field (e.g., `["RSI_14", "SMA_20", "SMA_50", "MACD"]`).
 
@@ -81,12 +88,10 @@ Trade direction (long/short) is decided by your expressions — design entry_lon
 - **INACTIVITY ALERT**: If `inactivity_alert` appears in the context, your current strategy has produced no trades for an extended period. Consider whether the current policy fits the market conditions — you may need different parameters, a different strategy type, or tighter entry thresholds to generate signals.
 - **COOLDOWN**: The `current_strategy.cooldown` field shows whether a strategy change cooldown is active, how many seconds/trades remain, and the current cooldown period. You can adjust the cooldown period by including `"cooldown_seconds": N` (60-3600) in your response — useful when you anticipate needing to adapt quickly.
 
-## MCP Tools
+## Tools
 
-The Current State section already contains recent price, trend, performance, and account data. Only call MCP tools if you need deeper analysis (e.g. longer kline history, orderbook depth, detailed trade list).
+The Current State section already contains recent price, trend, performance, and account data. Only call tools if you need deeper analysis (e.g. orderbook depth, detailed trade list). Kline requests are capped to 20 candles.
 
-Available: arena_klines, arena_orderbook, arena_leaderboard, arena_live_trades, arena_competition_detail
-
-IMPORTANT: Do NOT use arena_market_state — it reads a stale config with the wrong competition ID.
+If `current_indicator_values` is present in the context, use those values to calibrate your expression thresholds to current market conditions.
 
 $memory_context

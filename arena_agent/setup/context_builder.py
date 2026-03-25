@@ -152,6 +152,16 @@ def build_setup_context(
         "tick_interval_seconds": config.get("tick_interval_seconds", 30),
     }
 
+    # Current indicator values — so the LLM can calibrate expression thresholds
+    last_indicator_values = config.get("_last_indicator_values")
+    if isinstance(last_indicator_values, dict) and last_indicator_values:
+        context["current_indicator_values"] = last_indicator_values
+
+    # Expression validation errors from previous cycle — so the LLM can fix them
+    expr_errors = config.get("_expression_errors")
+    if isinstance(expr_errors, list) and expr_errors:
+        context["expression_errors"] = expr_errors
+
     # Recent trade performance (enhanced, with per-strategy breakdown)
     try:
         context["performance"] = _compute_performance(

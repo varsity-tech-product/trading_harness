@@ -442,6 +442,23 @@ def _run_auto(argv: list[str]) -> None:
                 log.error("Runtime crashed: %s", exc, exc_info=True)
                 report = None
 
+            # --- Feed runtime state back to config for next setup cycle ---
+            config_dict.pop("_expression_errors", None)
+            config_dict.pop("_last_indicator_values", None)
+            if runtime is not None:
+                # Expression validation errors → LLM can fix them next cycle
+                policy = getattr(runtime, "policy", None)
+                expr_errors = getattr(policy, "_validation_errors", None)
+                if expr_errors:
+                    config_dict["_expression_errors"] = [
+                        {"expression": k, "error": v} for k, v in expr_errors.items()
+                    ]
+                # Last indicator values → LLM can calibrate thresholds
+                sb = getattr(runtime, "state_builder", None)
+                last_signal = getattr(sb, "_last_signal_values", None)
+                if isinstance(last_signal, dict) and last_signal:
+                    config_dict["_last_indicator_values"] = last_signal
+
             # --- Inactivity watchdog ---
             if report is not None:
                 total_runtime_iterations += report.iterations

@@ -80,6 +80,12 @@ class StateBuilder:
         candles = self._parse_candles(klines_payload)
         market_snapshot = self._build_market_snapshot(market_info, orderbook, candles)
         signal_state = self.feature_engine.compute(candles)
+        # Cache latest indicator values for setup agent context feedback
+        if hasattr(signal_state, "values") and isinstance(signal_state.values, dict):
+            self._last_signal_values = {
+                k: round(v, 4) if isinstance(v, float) else v
+                for k, v in signal_state.values.items()
+            }
         account_snapshot = self._build_account_snapshot(account, trades)
         position_snapshot = self._build_position_snapshot(position, trades, account_snapshot)
         competition_snapshot = self._build_competition_snapshot(competition, account_snapshot, trades)
