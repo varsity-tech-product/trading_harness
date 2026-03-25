@@ -313,8 +313,8 @@ def run_tool_proxy_loop(
             )
             break
 
-        # Re-invoke with original prompt + all accumulated results.
-        current_prompt = prompt + results_text
+        # Re-invoke with accumulated context — LLM sees all prior tool results.
+        current_prompt = current_prompt + results_text
 
     # Max rounds or budget exceeded — treat last payload as final answer.
     payload.pop("tool_calls", None)
