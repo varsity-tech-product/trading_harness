@@ -74,7 +74,7 @@ class StateBuilder:
         orderbook = self.adapter.get_orderbook(self.config.symbol, self.config.orderbook_depth)
         account = self.adapter.get_live_account(self.config.competition_id)
         position = self.adapter.get_live_position(self.config.competition_id)
-        trades = self.adapter.get_live_trades(self.config.competition_id)
+        trades = self.adapter.get_trade_history(self.config.competition_id)
         competition = self.adapter.get_competition_detail(self.config.competition_id)
 
         candles = self._parse_candles(klines_payload)
@@ -224,7 +224,7 @@ class StateBuilder:
             unrealized_pnl=unresolved_pnl if not math.isclose(unresolved_pnl, 0.0) else account_snapshot.unrealized_pnl,
             metadata={
                 "inferred": True,
-                "source": "live_trades",
+                "source": "trade_history",
                 "unresolved_trade_count": len(unresolved),
                 "trades": unresolved,
             },

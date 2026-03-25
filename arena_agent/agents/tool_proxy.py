@@ -44,7 +44,7 @@ TOOL_GROUPS: dict[str, list[str]] = {
     ],
     "trading": [
         "trade_open", "trade_close", "trade_update_tpsl",
-        "get_live_trades", "get_live_position", "get_live_account",
+        "get_trade_history", "get_live_position", "get_live_account",
         "get_live_info",
     ],
     "competitions": [

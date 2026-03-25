@@ -227,9 +227,9 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
 
     # ── Live Trading (Direct API) ────────────────────────────────────────
 
-    @mcp.tool(name="varsity.live_trades", description="List my completed trades in a live competition.")
-    def live_trades(competition_id: int) -> dict:
-        return tools.live_trades(competition_id)
+    @mcp.tool(name="varsity.trade_history", description="List completed trades (history) in a live competition.")
+    def trade_history(competition_id: int) -> dict:
+        return tools.trade_history(competition_id)
 
     @mcp.tool(name="varsity.live_position", description="Get my current open position in a live competition (null if no position).")
     def live_position(competition_id: int) -> dict:

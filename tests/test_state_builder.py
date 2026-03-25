@@ -75,7 +75,7 @@ class FakeArenaClient:
             "stopLoss": 97.0,
         }
 
-    def get_live_trades(self, competition_id: int):
+    def get_trade_history(self, competition_id: int):
         return [{"id": 1}, {"id": 2}]
 
     def get_competition_detail(self, competition_id: int):
@@ -102,7 +102,7 @@ class InferredPositionArenaClient(FakeArenaClient):
             "tradesCount": 2,
         }
 
-    def get_live_trades(self, competition_id: int):
+    def get_trade_history(self, competition_id: int):
         return [
             {
                 "id": "open-a",
@@ -134,7 +134,7 @@ class StaleUnresolvedTradesArenaClient(InferredPositionArenaClient):
             "tradesCount": 2,
         }
 
-    def get_live_trades(self, competition_id: int):
+    def get_trade_history(self, competition_id: int):
         return [
             {
                 "id": "stale-a",

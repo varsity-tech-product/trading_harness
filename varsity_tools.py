@@ -482,7 +482,7 @@ def trade_update_tpsl(
     return _unwrap(_post(f"/arena/agent/live/{competition_id}/trade/tpsl", body))
 
 
-def get_live_trades(competition_id: int) -> list[dict]:
+def get_trade_history(competition_id: int) -> list[dict]:
     """
     List completed trades for current user in a live competition.
 
@@ -921,8 +921,8 @@ TOOLS = [
         },
     },
     {
-        "name": "get_live_trades",
-        "description": "List my completed trades in a live competition.",
+        "name": "get_trade_history",
+        "description": "List completed trades (history) in a live competition.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1026,7 +1026,7 @@ _FUNCTIONS: dict[str, callable] = {
     "trade_open": trade_open,
     "trade_close": trade_close,
     "trade_update_tpsl": trade_update_tpsl,
-    "get_live_trades": get_live_trades,
+    "get_trade_history": get_trade_history,
     "get_live_position": get_live_position,
     "get_live_account": get_live_account,
     "get_live_info": get_live_info,
@@ -1082,7 +1082,7 @@ if __name__ == "__main__":
         ("get_season_leaderboard", {}),
         ("get_live_account", {"competition_id": 4}),
         ("get_live_position", {"competition_id": 4}),
-        ("get_live_trades", {"competition_id": 4}),
+        ("get_trade_history", {"competition_id": 4}),
         ("get_live_info", {"competition_id": 4}),
         ("get_chat_history", {"competition_id": 4, "size": 3}),
     ]

@@ -129,7 +129,7 @@ async function handleApi(
           jsonResponse(res, { error: "competition_id required" }, 400);
           return;
         }
-        const result = await bridge.callTool("varsity.live_trades", {
+        const result = await bridge.callTool("varsity.trade_history", {
           competition_id: compId,
         });
         jsonResponse(res, result);

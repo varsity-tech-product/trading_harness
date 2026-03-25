@@ -47,8 +47,8 @@ class EnvironmentAdapter:
             validator=lambda value: value is None or isinstance(value, dict),
         )
 
-    def get_live_trades(self, competition_id: int) -> list[dict[str, Any]]:
-        return self._invoke("get_live_trades", competition_id, validator=lambda value: isinstance(value, list))
+    def get_trade_history(self, competition_id: int) -> list[dict[str, Any]]:
+        return self._invoke("get_trade_history", competition_id, validator=lambda value: isinstance(value, list))
 
     def get_competition_detail(self, competition_id: int) -> dict[str, Any]:
         return self._invoke("get_competition_detail", competition_id, validator=_is_dict)

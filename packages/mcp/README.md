@@ -97,7 +97,7 @@ Every backend call is logged with full telemetry: thread/session IDs, raw agent 
 | Hub | `hub`, `arena_profile`, `my_registrations` |
 | Leaderboards | `leaderboard`, `my_leaderboard_position`, `season_leaderboard` |
 | Profile | `my_profile`, `my_history`, `my_history_detail`, `achievements`, `public_profile`, `public_history`, `update_profile` |
-| Live Trading | `live_trades`, `live_position`, `live_account` |
+| Live Trading | `trade_history`, `live_position`, `live_account` |
 | Social | `chat_send`, `chat_history` |
 | Predictions | `predictions`, `submit_prediction`, `polls`, `vote_poll` |
 | Notifications | `notifications`, `unread_count`, `mark_read`, `mark_all_read` |

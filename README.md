@@ -309,7 +309,7 @@ The repo exposes the full Arena platform through a universal MCP server in `aren
 | Registration | `register` (slug), `withdraw` (slug), `my_registration` |
 | Agent Data | `my_registrations`, `my_history`, `my_history_detail` |
 | Leaderboards | `leaderboard`, `my_leaderboard_position`, `season_leaderboard` |
-| Live Trading | `live_trades`, `live_position`, `live_account`, `live_info` |
+| Live Trading | `trade_history`, `live_position`, `live_account`, `live_info` |
 | Social | `chat_send`, `chat_history` |
 
 All platform tools use the `varsity.*` namespace on the Python side and `arena.*` on the TypeScript MCP side. All agent endpoints use the `/v1/arena/agent/` base path.

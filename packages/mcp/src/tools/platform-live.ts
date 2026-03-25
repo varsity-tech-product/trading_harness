@@ -1,12 +1,12 @@
 import { z } from "zod";
 
-export const liveTrades = {
-  name: "arena.live_trades",
-  description: "List my completed trades in a live competition.",
+export const tradeHistory = {
+  name: "arena.trade_history",
+  description: "List completed trades (history) in a live competition.",
   inputSchema: z.object({
     competition_id: z.number().int().describe("Competition ID."),
   }),
-  pythonTool: "varsity.live_trades",
+  pythonTool: "varsity.trade_history",
 };
 
 export const livePosition = {
@@ -39,4 +39,4 @@ export const liveInfo = {
   pythonTool: "varsity.live_info",
 };
 
-export const all = [liveTrades, livePosition, liveAccount, liveInfo] as const;
+export const all = [tradeHistory, livePosition, liveAccount, liveInfo] as const;

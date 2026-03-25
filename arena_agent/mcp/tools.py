@@ -230,8 +230,8 @@ def season_detail(season_id: int):
 # ── Live Trading (Direct API) ────────────────────────────────────────────
 
 
-def live_trades(competition_id: int):
-    return varsity_tools.get_live_trades(competition_id)
+def trade_history(competition_id: int):
+    return varsity_tools.get_trade_history(competition_id)
 
 
 def live_position(competition_id: int):

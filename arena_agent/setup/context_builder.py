@@ -363,7 +363,7 @@ def _compute_performance(
 ) -> dict[str, Any]:
     """Compute performance metrics from recent trades, with per-strategy breakdown."""
     try:
-        trades = varsity_tools.get_live_trades(competition_id)
+        trades = varsity_tools.get_trade_history(competition_id)
     except Exception:
         return {"available": False}
 

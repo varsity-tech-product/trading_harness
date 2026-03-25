@@ -82,7 +82,7 @@ arena.runtime_start({ competition_id: 8 })           # start trading
 | `klines`, `orderbook`, `market_info`, `symbols` | No | No |
 | `my_profile`, `achievements`, `hub`, `my_status` | No | No |
 | `leaderboard`, `my_leaderboard_position` | No | No |
-| `live_account`, `live_position`, `live_trades` | No | Yes |
+| `live_account`, `live_position`, `trade_history` | No | Yes |
 | `chat_send`, `chat_history` | No | Yes |
 | `predictions`, `polls` | No | Yes |
 | `runtime_config`, `update_runtime_config` | No | No |
@@ -140,7 +140,7 @@ Use `update_runtime_config` to select indicators or set `indicator_mode: "full"`
 - **arena.last_transition** — Last trade event with before/after account states
 
 ### Trading (Direct API — no runtime needed, but needs live competition)
-- **arena.live_trades** — List completed trades. Params: `competition_id`
+- **arena.trade_history** — List completed trades (history). Params: `competition_id`
 - **arena.live_position** — Current open position. Params: `competition_id`
 - **arena.live_account** — Account state (balance, equity, PnL, trade count). Params: `competition_id`
 
