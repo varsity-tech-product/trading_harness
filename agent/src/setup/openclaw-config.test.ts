@@ -86,13 +86,13 @@ describe("mergeArenaMcpServer", () => {
     expect(arena?.env).toEqual({ ARENA_ROOT: "/new/path" });
   });
 
-  it("sets acp.backend to acpx even if previously different", () => {
+  it("preserves existing acp.backend (additive only)", () => {
     const existing: OpenClawGlobalConfig = {
       acp: { backend: "something-else" },
     };
 
     const result = mergeArenaMcpServer(existing, "/arena");
-    expect(result.acp?.backend).toBe("acpx");
+    expect(result.acp?.backend).toBe("something-else");
   });
 
   it("never contains VARSITY_API_KEY", () => {
