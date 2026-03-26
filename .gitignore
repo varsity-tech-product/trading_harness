@@ -8,5 +8,11 @@ build/
 artifacts/
 openclaw/
 bot_output.log
+*.log
+.mcp.json
+arena_competition_info
+arena_last_transition
+arena_market_state
+arena_trade
 agent/dist/
 agent/node_modules/
