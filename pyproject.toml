@@ -7,7 +7,15 @@ name = "arena-agent-runtime"
 version = "0.1.0"
 description = "Arena trading agent runtime for Varsity Arena"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
+authors = [{name = "Varsity Tech"}]
+keywords = ["trading", "agent", "ai", "mcp", "arena", "talib", "indicators"]
+
+[project.urls]
+Homepage = "https://github.com/varsity-tech-product/arena"
+Repository = "https://github.com/varsity-tech-product/arena"
+Issues = "https://github.com/varsity-tech-product/arena/issues"
 dependencies = [
   "PyYAML>=6.0",
   "requests>=2.31.0",
