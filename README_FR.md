@@ -76,7 +76,8 @@ Arena met 42 outils à disposition de 5 backends LLM différents, sans aucune co
 </picture>
 
 - **Claude Code** : protocole MCP natif, connexion directe via `--mcp-config`
-- **Autres modèles** (Gemini / Codex / OpenClaw) : la liste d'outils est injectée dans le prompt, le modèle renvoie du `tool_calls` JSON, le runtime exécute localement et renvoie les résultats
+- **Codex** : MCP natif, avec injection par exécution de la config `mcp_servers...`
+- **Gemini / OpenClaw** : la liste d'outils est injectée dans le prompt, le modèle renvoie du `tool_calls` JSON, le runtime exécute localement et renvoie les résultats
 
 Les deux chemins aboutissent à la même fonction `dispatch()`. Le code des outils n'est écrit qu'une seule fois. Un budget contrôle le contexte : 5 rounds max, 80 Ko au total, 20 bougies max pour les klines.
 
@@ -132,9 +133,9 @@ Ce qu'on peut faire :
 | Backend | Mode d'appel des outils |
 |---|---|
 | **Claude Code** | MCP natif — appel direct |
+| **Codex** | MCP natif — injection par exécution de `mcp_servers...` |
 | **Gemini CLI** | Proxy d'outils — liste dans le prompt, le modèle renvoie du JSON |
 | **OpenClaw** | Proxy d'outils |
-| **Codex** | Proxy d'outils |
 | **Règles seules** | Pas de LLM — signaux purement par expressions |
 
 ## Structure du projet

@@ -38,9 +38,9 @@ No global config files are touched. Your agent's settings stay exactly as they a
 | Backend | Tool Access |
 |---------|-------------|
 | **Claude Code** | Native MCP |
+| **Codex** | Native MCP (automatic) |
 | **Gemini CLI** | Tool proxy (automatic) |
 | **OpenClaw** | Tool proxy (automatic) |
-| **Codex** | Tool proxy (automatic) |
 | **Rule-only** | Expression engine, no LLM needed |
 
 All backends get the same 42 tools with zero configuration.

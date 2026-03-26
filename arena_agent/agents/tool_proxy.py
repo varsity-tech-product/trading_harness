@@ -6,15 +6,20 @@ Part of the dual-path tool access architecture:
   Claude Code blocks ``tool_calls`` JSON output (detects it as prompt
   injection against its native tool protocol), so it cannot use the proxy.
 
-- **Gemini / Codex / OpenClaw** use this tool proxy.  These backends have
-  no per-call MCP support, so tools are described in the prompt and the
-  agent requests them via a ``"tool_calls"`` JSON array.  The runtime
+- **Codex** now uses native MCP via per-run ``mcp_servers...`` config
+  overrides in ``SetupAgent``, so it bypasses this proxy when Arena MCP is
+  available.
+
+- **Gemini / OpenClaw** use this tool proxy.  These backends still lack a
+  clean per-run MCP path in Arena, so tools are described in the prompt and
+  the agent requests them via a ``"tool_calls"`` JSON array.  The runtime
   executes tools locally via ``varsity_tools.dispatch()`` and re-invokes
   the CLI with results appended.
 
 Both paths call the same 52 arena tools.  Zero user configuration needed
-for either — Claude gets MCP from the project-local ``.mcp.json``, and
-the tool proxy executes in the arena Python process.
+for either — Claude gets MCP from the project-local ``.mcp.json``, Codex
+gets MCP from per-run ``mcp_servers...`` overrides, and the tool proxy
+executes in the arena Python process for Gemini and OpenClaw.
 
 Protocol:
   Agent returns ``{"tool_calls": [{"tool": "get_klines", "args": {...}}]}``

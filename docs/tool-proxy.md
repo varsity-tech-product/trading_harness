@@ -7,7 +7,8 @@ How Arena gives 5 different LLM backends access to the same 42 tools with zero u
 Agent CLIs handle tools differently:
 
 - **Claude Code** supports native MCP — pass `--mcp-config` and it calls tools directly
-- **Gemini CLI**, **Codex**, **OpenClaw** have no per-call MCP support
+- **Codex** supports native MCP via per-run config overrides (`-c mcp_servers...`)
+- **Gemini CLI** and **OpenClaw** still need a prompt-side tool proxy
 
 Most agent frameworks solve this by requiring users to manually configure MCP servers for each backend. Arena solves it automatically.
 
@@ -16,11 +17,13 @@ Most agent frameworks solve this by requiring users to manually configure MCP se
 ```mermaid
 graph TD
     A[Setup Agent] --> B{Which backend?}
-    B -->|Claude| C[Native MCP Path]
-    B -->|Gemini / Codex / OpenClaw| D[Tool Proxy Path]
+    B -->|Claude / Codex| C[Native MCP Path]
+    B -->|Gemini / OpenClaw| D[Tool Proxy Path]
 
     C --> E["claude -p --mcp-config .mcp.json"]
+    C --> E2["codex exec -c mcp_servers.arena..."]
     E --> F[MCP Server - TypeScript]
+    E2 --> F
     F --> G[Python Bridge - stdio]
     G --> H["varsity_tools.dispatch()"]
 
@@ -38,7 +41,7 @@ graph TD
 
 Both paths call the same `varsity_tools.dispatch()` function. Zero tool reimplementation.
 
-## Claude Path: Native MCP
+## Native MCP Path: Claude and Codex
 
 Claude Code has built-in MCP support. The setup agent passes the config directly:
 
@@ -51,9 +54,21 @@ claude -p --output-format json \
 
 Claude sees the 42 tools as native MCP tools and calls them through the standard MCP protocol. The TypeScript MCP server receives the calls and forwards them to Python via stdio.
 
+Codex uses the same Arena MCP server, but the setup agent injects it through per-run config overrides instead of a dedicated `--mcp-config` flag:
+
+```
+codex exec --json \
+  -c 'mcp_servers.arena.command="arena-mcp"' \
+  -c 'mcp_servers.arena.args=["serve"]' \
+  -c 'mcp_servers.arena.env.ARENA_ROOT="/path/to/arena"' \
+  "Your prompt here..."
+```
+
+This keeps Codex on native MCP without touching `~/.codex/config.toml`.
+
 ## Tool Proxy Path: Prompt-Based Tool Use
 
-For backends without MCP support, the tool proxy:
+For backends that still lack a clean per-run MCP path, the tool proxy:
 
 1. **Injects a tool catalog** into the prompt:
    ```
@@ -126,7 +141,7 @@ No manual intervention needed. The agent keeps trading.
 ## Key Design Decisions
 
 **Why not just use MCP for everything?**
-Gemini CLI, Codex, and OpenClaw don't support per-call MCP configuration. Requiring users to manually set up MCP servers would break the "zero config" promise.
+Claude and Codex now use native MCP. Gemini CLI and OpenClaw still do not have a comparable zero-config runtime path in Arena, so the tool proxy remains necessary for them.
 
 **Why execute tools locally instead of proxying to the API?**
 The tool proxy calls `varsity_tools.dispatch()` directly in the Python process. No HTTP overhead, no MCP server needed. The MCP server exists for Claude and external MCP clients — the tool proxy bypasses it entirely.
@@ -139,6 +154,7 @@ The LLM sees every prior tool result when making its next request. This enables 
 | File | Role |
 |------|------|
 | `arena_agent/agents/tool_proxy.py` | Tool catalog, execution loop, budget controls |
+| `arena_agent/agents/setup_agent.py` | Backend-specific setup agent launching, including Codex MCP injection |
 | `arena_agent/agents/cli_backends.py` | Backend resolution, usage extraction, session cleanup |
 | `agent/src/index.ts` | MCP server — registers tools, forwards to Python |
 | `agent/src/python-bridge.ts` | TypeScript-to-Python bridge over stdio |

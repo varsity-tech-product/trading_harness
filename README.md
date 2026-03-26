@@ -76,7 +76,8 @@ Arena gives 5 different agent backends access to the same 42 tools without any u
 </picture>
 
 - **Claude Code**: Native MCP via per-call `--mcp-config` — Claude calls tools directly
-- **Everyone else**: Tool catalog injected into prompt, agent returns `tool_calls` JSON, runtime executes locally and re-invokes with results
+- **Codex**: Native MCP via per-run `mcp_servers...` config overrides — Codex calls tools directly
+- **Gemini / OpenClaw**: Tool catalog injected into prompt, agent returns `tool_calls` JSON, runtime executes locally and re-invokes with results
 
 Both paths call the same `dispatch()` function. Zero tool reimplementation. Budget controls prevent context explosion (max 5 rounds, 80KB total, klines capped to 20 candles).
 
@@ -132,9 +133,9 @@ Features:
 | Backend | How tools work |
 |---------|---------------|
 | **Claude Code** | Native MCP — calls tools directly |
+| **Codex** | Native MCP — per-run `mcp_servers...` config overrides |
 | **Gemini CLI** | Tool proxy — tools in prompt, agent returns `tool_calls` JSON |
 | **OpenClaw** | Tool proxy |
-| **Codex** | Tool proxy |
 | **Rule-only** | No LLM — pure expression-based signals |
 
 ## Project Structure

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import shutil
@@ -53,10 +54,27 @@ def _parse_codex_jsonl(raw: str) -> str | None:
             if item.get("type") == "agent_message":
                 final_text = item.get("text", "")
                 logger.info("codex agent_message: %s", (final_text or "")[:1000])
+            elif item.get("type") == "mcp_tool_call":
+                logger.info(
+                    "codex mcp_tool_call | server=%s tool=%s status=%s error=%s",
+                    item.get("server", "?"),
+                    item.get("tool", "?"),
+                    item.get("status", "?"),
+                    item.get("error"),
+                )
             elif item.get("type") == "reasoning":
                 summary = item.get("summary") or item.get("text") or ""
                 if summary:
                     logger.info("codex reasoning: %s", summary[:2000])
+
+        elif etype == "item.started":
+            item = event.get("item", {})
+            if item.get("type") == "mcp_tool_call":
+                logger.info(
+                    "codex mcp_tool_call start | server=%s tool=%s",
+                    item.get("server", "?"),
+                    item.get("tool", "?"),
+                )
 
         elif etype == "turn.completed":
             usage = event.get("usage", {})
@@ -101,6 +119,70 @@ def _find_mcp_config() -> str | None:
                 return str(mcp_json)
 
     return None
+
+
+def _load_mcp_server_entry(config_path: str | None, name: str = "arena") -> dict[str, Any] | None:
+    """Load a named MCP server entry from a Claude-style ``.mcp.json`` file."""
+    if not config_path:
+        return None
+    try:
+        payload = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    servers = payload.get("mcpServers") or payload.get("servers") or {}
+    if not isinstance(servers, dict):
+        return None
+    entry = servers.get(name)
+    return entry if isinstance(entry, dict) else None
+
+
+def _default_arena_mcp_entry() -> dict[str, Any] | None:
+    """Build a default stdio MCP entry for the bundled arena server."""
+    arena_root = (
+        os.environ.get("ARENA_ROOT")
+        or os.environ.get("ARENA_HOME")
+        or str(Path(__file__).resolve().parent.parent.parent)
+    )
+    command = shutil.which("arena-mcp") or "arena-mcp"
+    return {
+        "command": command,
+        "args": ["serve"],
+        "env": {"ARENA_ROOT": arena_root},
+    }
+
+
+def _build_codex_mcp_overrides(config_path: str | None) -> list[str]:
+    """Translate Arena MCP config into ``codex exec -c`` overrides.
+
+    Codex does not expose a dedicated ``--mcp-config`` flag like Claude Code,
+    but it does accept per-run config overrides. That lets the setup agent use
+    native MCP without touching ``~/.codex/config.toml``.
+    """
+    entry = _load_mcp_server_entry(config_path, "arena") or _default_arena_mcp_entry()
+    if not isinstance(entry, dict):
+        return []
+
+    url = entry.get("url")
+    transport = str(entry.get("transport") or entry.get("type") or "stdio").lower()
+    command = entry.get("command")
+    args = entry.get("args") or []
+    env = entry.get("env") or {}
+
+    overrides: list[str] = []
+    if isinstance(url, str) and url:
+        overrides.extend(["-c", f"mcp_servers.arena.url={json.dumps(url)}"])
+    elif transport == "stdio" and isinstance(command, str) and command:
+        overrides.extend(["-c", f"mcp_servers.arena.command={json.dumps(command)}"])
+        overrides.extend(["-c", f"mcp_servers.arena.args={json.dumps([str(a) for a in args])}"])
+    else:
+        return []
+
+    if isinstance(env, dict):
+        for key, value in env.items():
+            if not isinstance(key, str):
+                continue
+            overrides.extend(["-c", f"mcp_servers.arena.env.{key}={json.dumps(str(value))}"])
+    return overrides
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -294,15 +376,31 @@ class SetupAgent:
         self.model = model
         self.timeout = timeout
         self.openclaw_agent_id = openclaw_agent_id
+        self.mcp_config_path = mcp_config_path or _find_mcp_config()
+        self._resolved_backend = resolve_backend(backend, None)
+        self._codex_mcp_overrides = (
+            _build_codex_mcp_overrides(self.mcp_config_path)
+            if self._resolved_backend == "codex"
+            else []
+        )
         self.tool_proxy_enabled = tool_proxy_enabled
         self.tool_proxy_max_rounds = tool_proxy_max_rounds
-        self.mcp_config_path = mcp_config_path or _find_mcp_config()
-        if not self.mcp_config_path and not tool_proxy_enabled:
+        if self._resolved_backend == "codex" and self._codex_mcp_overrides:
+            if self.tool_proxy_enabled:
+                logger.info("Codex native MCP enabled — bypassing tool proxy.")
+            self.tool_proxy_enabled = False
+        native_mcp_enabled = (
+            bool(self.mcp_config_path)
+            if self._resolved_backend == "claude"
+            else bool(self._codex_mcp_overrides)
+            if self._resolved_backend == "codex"
+            else False
+        )
+        if not native_mcp_enabled and not self.tool_proxy_enabled:
             logger.warning(
-                "No .mcp.json config found and tool proxy disabled — setup agent "
+                "Native MCP unavailable and tool proxy disabled — setup agent "
                 "will not have access to arena tools for deeper analysis."
             )
-        self._resolved_backend = resolve_backend(backend, None)
         self._original_backend = self._resolved_backend
         self._consecutive_failures = 0
         self._max_consecutive_failures = max_consecutive_failures
@@ -528,6 +626,8 @@ class SetupAgent:
             "-c", 'model_reasoning_effort="medium"',
             "-c", 'model_reasoning_summaries="verbose"',
         ]
+        if self._codex_mcp_overrides:
+            command.extend(self._codex_mcp_overrides)
         if self.model:
             command.extend(["-m", self.model])
         command.append("-")
