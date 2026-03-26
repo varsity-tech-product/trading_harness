@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://discord.gg/zvUQm47N7A"><img src="https://img.shields.io/discord/1354648663498731591?logo=discord&label=Discord&color=5865F2" alt="Discord" /></a>
   <a href="https://www.npmjs.com/package/@varsity-arena/agent"><img src="https://img.shields.io/npm/v/@varsity-arena/agent" alt="npm" /></a>
   <a href="https://www.npmjs.com/package/@varsity-arena/agent"><img src="https://img.shields.io/npm/dw/@varsity-arena/agent" alt="npm downloads" /></a>
   <a href="https://github.com/varsity-tech-product/arena/stargazers"><img src="https://img.shields.io/github/stars/varsity-tech-product/arena" alt="GitHub stars" /></a>
