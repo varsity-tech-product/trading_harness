@@ -1,4 +1,5 @@
-// Converts layout result to Excalidraw JSON — intent-driven sketch style
+// Converts layout result to Excalidraw JSON — clean hand-drawn sketch style
+// Reference: autoresearch loop / agent loop diagram aesthetic
 
 import type { LayoutResult, LayoutNode, LayoutSubgraph, LayoutAnnotation, MermaidEdge, NodeRole } from "./types.js";
 
@@ -7,16 +8,19 @@ let _nextSeed = 100000;
 function uid(prefix: string): string { return `${prefix}_${_nextId++}`; }
 function seed(): number { return _nextSeed++; }
 
-// --- Semantic color mapping ---
+// --- Style: minimal fills, only success/error get color ---
 
-const ROLE_COLORS: Record<NodeRole, string> = {
-  primary:     "#a5d8ff", // strong blue
-  decision:    "#ffec99", // yellow
-  result:      "#b2f2bb", // green
-  error:       "#ffc9c9", // red
-  system:      "#d0ebff", // light blue
-  convergence: "#e5dbff", // light purple — where paths merge
-};
+function bgColor(role: NodeRole): string {
+  if (role === "result") return "#d8f5a2";   // soft green
+  if (role === "error") return "#ffc9c9";    // soft red
+  return "transparent";                       // everything else: no fill
+}
+
+function strokeColor(role: NodeRole): string {
+  if (role === "result") return "#2b8a3e";
+  if (role === "error") return "#c92a2a";
+  return "#1e1e1e";
+}
 
 interface ExcalidrawElement { [key: string]: unknown; }
 
@@ -24,12 +28,12 @@ function baseProps(id: string, type: string, x: number, y: number, w: number, h:
   return {
     id, type, x, y, width: w, height: h,
     angle: 0,
-    strokeColor: "#000000",
+    strokeColor: "#1e1e1e",
     backgroundColor: "transparent",
-    fillStyle: "hachure",
-    strokeWidth: 1.5,
+    fillStyle: "solid",
+    strokeWidth: 1,
     strokeStyle: "solid",
-    roughness: 2,
+    roughness: 1,
     opacity: 100,
     groupIds: [],
     frameId: null,
@@ -46,24 +50,51 @@ function baseProps(id: string, type: string, x: number, y: number, w: number, h:
   };
 }
 
+function makeTitle(title: string, layout: LayoutResult): ExcalidrawElement {
+  const id = uid("title");
+  // Center title above all nodes
+  const allX = layout.nodes.map((n) => n.x + n.width / 2);
+  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+  const topY = Math.min(...layout.nodes.map((n) => n.y));
+
+  const fontSize = 32;
+  const width = title.length * 18;
+
+  return {
+    ...baseProps(id, "text", centerX - width / 2, topY - 70, width, fontSize * 1.3),
+    text: title,
+    fontSize,
+    fontFamily: 1, // Virgil
+    textAlign: "center",
+    verticalAlign: "middle",
+    strokeColor: "#1e1e1e",
+    originalText: title,
+    autoResize: true,
+    lineHeight: 1.25,
+    roughness: 0,
+  };
+}
+
 function makeShape(node: LayoutNode): { shape: ExcalidrawElement; text: ExcalidrawElement } {
   const shapeId = uid("shape");
   const textId = uid("text");
   const type = node.shape === "diamond" ? "diamond" : "rectangle";
-
-  const strokeWidth = node.role === "primary" ? 2 : 1.5;
+  const bg = bgColor(node.role);
+  const stroke = strokeColor(node.role);
+  const sw = node.role === "primary" ? 1.5 : 1;
 
   const shape: ExcalidrawElement = {
     ...baseProps(shapeId, type, node.x, node.y, node.width, node.height),
-    backgroundColor: ROLE_COLORS[node.role],
-    strokeWidth,
+    backgroundColor: bg,
+    strokeColor: stroke,
+    strokeWidth: sw,
     roundness: type === "rectangle" ? { type: 3 } : { type: 2 },
     boundElements: [{ id: textId, type: "text" }],
   };
 
   const lines = node.label.split("\n");
   const textHeight = lines.length * node.fontSize * 1.25;
-  const textWidth = node.width - 20;
+  const textWidth = node.width - 16;
 
   const text: ExcalidrawElement = {
     ...baseProps(textId, "text",
@@ -72,9 +103,10 @@ function makeShape(node: LayoutNode): { shape: ExcalidrawElement; text: Excalidr
       textWidth, textHeight),
     text: node.label,
     fontSize: node.fontSize,
-    fontFamily: 1, // Virgil
+    fontFamily: 1,
     textAlign: "center",
     verticalAlign: "middle",
+    strokeColor: stroke,
     containerId: shapeId,
     originalText: node.label,
     autoResize: true,
@@ -91,12 +123,11 @@ function makeSubgraph(sg: LayoutSubgraph): { rect: ExcalidrawElement; label: Exc
 
   const rect: ExcalidrawElement = {
     ...baseProps(rectId, "rectangle", sg.x, sg.y, sg.width, sg.height),
-    backgroundColor: "#f8f9fa",
-    fillStyle: "solid",
+    backgroundColor: "transparent",
     strokeStyle: "dashed",
     strokeWidth: 1,
-    strokeColor: "#868e96",
-    roughness: 2,
+    strokeColor: "#adb5bd",
+    roughness: 1,
     roundness: { type: 3 },
     boundElements: [{ id: labelId, type: "text" }],
   };
@@ -108,6 +139,7 @@ function makeSubgraph(sg: LayoutSubgraph): { rect: ExcalidrawElement; label: Exc
     fontFamily: 1,
     textAlign: "left",
     verticalAlign: "top",
+    strokeColor: "#868e96",
     containerId: rectId,
     originalText: sg.label,
     autoResize: true,
@@ -121,10 +153,10 @@ function makeSubgraph(sg: LayoutSubgraph): { rect: ExcalidrawElement; label: Exc
 function makeAnnotation(ann: LayoutAnnotation): ExcalidrawElement {
   const id = uid("ann");
   const lines = ann.text.split("\n");
-  const fontSize = 13;
+  const fontSize = 14;
   const maxLen = Math.max(...lines.map((l) => l.length));
-  const width = maxLen * 7 + 16;
-  const height = lines.length * fontSize * 1.4;
+  const width = maxLen * 8 + 12;
+  const height = lines.length * fontSize * 1.5;
 
   return {
     ...baseProps(id, "text", ann.x - width / 2, ann.y - height / 2, width, height),
@@ -133,11 +165,11 @@ function makeAnnotation(ann: LayoutAnnotation): ExcalidrawElement {
     fontFamily: 1,
     textAlign: "left",
     verticalAlign: "middle",
-    strokeColor: "#868e96", // gray — annotation layer
-    opacity: 85,
+    strokeColor: "#868e96",
+    opacity: 90,
     originalText: ann.text,
     autoResize: true,
-    lineHeight: 1.4,
+    lineHeight: 1.5,
     roughness: 0,
   };
 }
@@ -148,7 +180,6 @@ function makeArrow(
   toNode: LayoutNode,
 ): { arrow: ExcalidrawElement; label?: ExcalidrawElement } {
   const arrowId = uid("arrow");
-
   const fromCx = fromNode.x + fromNode.width / 2;
   const fromCy = fromNode.y + fromNode.height / 2;
   const toCx = toNode.x + toNode.width / 2;
@@ -156,15 +187,21 @@ function makeArrow(
   const dx = toCx - fromCx;
   const dy = toCy - fromCy;
 
+  // Red arrows for main flow, dark for back-edges
+  const isBackEdge = (toNode.layer ?? 0) <= (fromNode.layer ?? 0);
+  const arrowColor = isBackEdge ? "#495057" : "#e03131";
+
   const arrow: ExcalidrawElement = {
     ...baseProps(arrowId, "arrow", fromCx, fromCy, Math.abs(dx), Math.abs(dy)),
+    strokeColor: arrowColor,
     backgroundColor: "transparent",
     fillStyle: "solid",
+    strokeWidth: 1.5,
     roundness: { type: 2 },
     points: [[0, 0], [dx, dy]],
     lastCommittedPoint: null,
-    startBinding: { elementId: "", focus: 0, gap: 8, fixedPoint: null },
-    endBinding: { elementId: "", focus: 0, gap: 8, fixedPoint: null },
+    startBinding: { elementId: "", focus: 0, gap: 5, fixedPoint: null },
+    endBinding: { elementId: "", focus: 0, gap: 5, fixedPoint: null },
     startArrowhead: null,
     endArrowhead: "arrow",
     elbowed: false,
@@ -173,11 +210,11 @@ function makeArrow(
   let labelEl: ExcalidrawElement | undefined;
   if (edge.label) {
     const labelId = uid("elabel");
-    const fontSize = 13;
-    const labelWidth = edge.label.length * 7 + 16;
+    const fontSize = 14;
+    const labelWidth = edge.label.length * 8 + 12;
     const labelHeight = fontSize * 1.25;
     const midX = fromCx + dx / 2 - labelWidth / 2;
-    const midY = fromCy + dy / 2 - labelHeight / 2 - 12;
+    const midY = fromCy + dy / 2 - labelHeight / 2 - 10;
 
     labelEl = {
       ...baseProps(labelId, "text", midX, midY, labelWidth, labelHeight),
@@ -186,6 +223,7 @@ function makeArrow(
       fontFamily: 1,
       textAlign: "center",
       verticalAlign: "middle",
+      strokeColor: arrowColor,
       containerId: arrowId,
       originalText: edge.label,
       autoResize: true,
@@ -198,7 +236,7 @@ function makeArrow(
   return { arrow, label: labelEl };
 }
 
-export function toExcalidraw(layout: LayoutResult): object {
+export function toExcalidraw(layout: LayoutResult, title?: string): object {
   _nextId = 1;
   _nextSeed = 100000;
 
@@ -206,7 +244,10 @@ export function toExcalidraw(layout: LayoutResult): object {
   const nodeToShapeId = new Map<string, string>();
   const nodeLayoutMap = new Map(layout.nodes.map((n) => [n.id, n]));
 
-  // Subgraphs (background)
+  // Title
+  if (title) elements.push(makeTitle(title, layout));
+
+  // Subgraphs
   for (const sg of layout.subgraphs) {
     const { rect, label } = makeSubgraph(sg);
     elements.push(rect, label);
@@ -221,7 +262,6 @@ export function toExcalidraw(layout: LayoutResult): object {
 
   // Arrows
   const shapeArrows = new Map<string, { id: string; type: string }[]>();
-
   for (const edge of layout.edges) {
     const fromNode = nodeLayoutMap.get(edge.from);
     const toNode = nodeLayoutMap.get(edge.to);
@@ -242,7 +282,7 @@ export function toExcalidraw(layout: LayoutResult): object {
     if (label) elements.push(label);
   }
 
-  // Patch shape boundElements to include arrows
+  // Patch boundElements
   for (const el of elements) {
     if (el.type === "rectangle" || el.type === "diamond") {
       const arrows = shapeArrows.get(el.id as string) || [];
@@ -251,10 +291,8 @@ export function toExcalidraw(layout: LayoutResult): object {
     }
   }
 
-  // Annotations (floating gray text — the human layer)
-  for (const ann of layout.annotations) {
-    elements.push(makeAnnotation(ann));
-  }
+  // Annotations
+  for (const ann of layout.annotations) elements.push(makeAnnotation(ann));
 
   return {
     type: "excalidraw",

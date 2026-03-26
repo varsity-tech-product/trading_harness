@@ -22,11 +22,11 @@ for (const diagram of DIAGRAMS) {
 
   writeFileSync(
     resolve(outDir, diagram.outputFile),
-    JSON.stringify(toExcalidraw(layout), null, 2),
+    JSON.stringify(toExcalidraw(layout, diagram.title), null, 2),
   );
 
   const svgName = diagram.outputFile.replace(".excalidraw", ".svg");
-  writeFileSync(resolve(outDir, svgName), toSvg(layout));
+  writeFileSync(resolve(outDir, svgName), toSvg(layout, diagram.title));
 
   const roles = layout.nodes.map((n) => n.role);
   const roleCounts = roles.reduce((acc, r) => { acc[r] = (acc[r] || 0) + 1; return acc; }, {} as Record<string, number>);

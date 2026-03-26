@@ -1,8 +1,9 @@
-// Converts layout result to SVG — hand-drawn sketch style with semantic hierarchy
+// Converts layout result to SVG — clean hand-drawn sketch style
+// Reference: autoresearch loop / agent loop diagram aesthetic
+// Key: no fills on most nodes, red arrows, large title, subtle wobble
 
 import type { LayoutResult, LayoutNode, LayoutSubgraph, LayoutAnnotation, MermaidEdge, NodeRole } from "./types.js";
 
-// Seeded PRNG for deterministic wobble
 function prng(seed: number): number {
   const x = Math.sin(seed * 9301 + 49297) * 49297;
   return x - Math.floor(x);
@@ -11,25 +12,19 @@ function jitter(seed: number, range: number): number {
   return (prng(seed) - 0.5) * range;
 }
 
-// --- Semantic colors ---
-const ROLE_COLORS: Record<NodeRole, string> = {
-  primary:     "#a5d8ff",
-  decision:    "#ffec99",
-  result:      "#b2f2bb",
-  error:       "#ffc9c9",
-  system:      "#d0ebff",
-  convergence: "#e5dbff",
-};
+// --- Only success/error get fills, everything else is transparent ---
 
-// Darker stroke per role for contrast
-const ROLE_STROKES: Record<NodeRole, string> = {
-  primary:     "#1864ab",
-  decision:    "#e67700",
-  result:      "#2b8a3e",
-  error:       "#c92a2a",
-  system:      "#1971c2",
-  convergence: "#7048e8",
-};
+function bgColor(role: NodeRole): string {
+  if (role === "result") return "#d8f5a2";
+  if (role === "error") return "#ffc9c9";
+  return "#ffffff"; // white fill (matches page)
+}
+
+function strokeColorForRole(role: NodeRole): string {
+  if (role === "result") return "#2b8a3e";
+  if (role === "error") return "#c92a2a";
+  return "#1e1e1e";
+}
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -37,11 +32,11 @@ function escapeXml(s: string): string {
 
 const FONT = `'Virgil', 'Segoe Print', 'Comic Sans MS', 'Patrick Hand', cursive`;
 
-// --- Sketchy shape generators ---
+// --- Subtle sketchy shapes (less aggressive than before) ---
 
 function sketchRect(x: number, y: number, w: number, h: number, seed: number): string {
-  const wobble = 1.8;
-  const r = 6;
+  const wobble = 1.2; // subtle
+  const r = 5;
   const j = (i: number) => jitter(seed + i, wobble);
   return `M ${x + r + j(1)},${y + j(2)}
     L ${x + w - r + j(3)},${y + j(4)}
@@ -55,7 +50,7 @@ function sketchRect(x: number, y: number, w: number, h: number, seed: number): s
 }
 
 function sketchDiamond(cx: number, cy: number, hw: number, hh: number, seed: number): string {
-  const wobble = 2.5;
+  const wobble = 1.5;
   const j = (i: number) => jitter(seed + i, wobble);
   return `M ${cx + j(1)},${cy - hh + j(2)}
     L ${cx + hw + j(3)},${cy + j(4)}
@@ -63,71 +58,60 @@ function sketchDiamond(cx: number, cy: number, hw: number, hh: number, seed: num
     L ${cx - hw + j(7)},${cy + j(8)} Z`;
 }
 
-function hachureLines(x: number, y: number, w: number, h: number, color: string, seed: number): string {
-  const gap = 9;
-  const lines: string[] = [];
-  for (let offset = -h; offset < w + h; offset += gap) {
-    const x1 = x + offset;
-    const x2 = x + offset + h * 0.35;
-    const clipX1 = Math.max(x, Math.min(x + w, x1));
-    const clipX2 = Math.max(x, Math.min(x + w, x2));
-    if (Math.abs(clipX2 - clipX1) > 3) {
-      const t1 = (clipX1 - x1) / ((x2 - x1) || 1);
-      const t2 = (clipX2 - x1) / ((x2 - x1) || 1);
-      lines.push(`<line x1="${clipX1 + jitter(seed + offset, 1)}" y1="${y + t1 * h + jitter(seed + offset + 1, 1)}" x2="${clipX2 + jitter(seed + offset + 2, 1)}" y2="${y + t2 * h + jitter(seed + offset + 3, 1)}" stroke="${color}" stroke-width="0.7" opacity="0.25" />`);
-    }
-  }
-  return lines.join("\n");
-}
+// --- Render ---
 
-// --- Render functions ---
+function renderTitle(title: string, layout: LayoutResult): string {
+  const allX = layout.nodes.map((n) => n.x + n.width / 2);
+  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+  const topY = Math.min(...layout.nodes.map((n) => n.y));
+
+  return `<text x="${centerX}" y="${topY - 35}" text-anchor="middle" dominant-baseline="auto" font-family="${FONT}" font-size="30" font-weight="600" fill="#1e1e1e">${escapeXml(title)}</text>`;
+}
 
 function renderNode(node: LayoutNode, idx: number): string {
   const cx = node.x + node.width / 2;
   const cy = node.y + node.height / 2;
-  const fill = ROLE_COLORS[node.role];
-  const stroke = ROLE_STROKES[node.role];
-  const strokeWidth = node.role === "primary" ? 2.2 : 1.5;
+  const fill = bgColor(node.role);
+  const stroke = strokeColorForRole(node.role);
+  const sw = node.role === "primary" ? 1.5 : 1;
   const lines = node.label.split("\n");
   const lineHeight = node.fontSize * 1.4;
-  const shapeSeed = idx * 100;
+  const seed = idx * 100;
 
   let shape: string;
   if (node.shape === "diamond") {
     const hw = node.width / 2;
     const hh = node.height / 2;
-    shape = `<path d="${sketchDiamond(cx, cy, hw, hh, shapeSeed)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />`;
+    shape = `<path d="${sketchDiamond(cx, cy, hw, hh, seed)}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" />`;
   } else {
-    shape = `<path d="${sketchRect(node.x, node.y, node.width, node.height, shapeSeed)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />`;
+    shape = `<path d="${sketchRect(node.x, node.y, node.width, node.height, seed)}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" />`;
   }
 
-  const hachure = hachureLines(node.x, node.y, node.width, node.height, stroke, shapeSeed + 50);
-
   const textStartY = cy - ((lines.length - 1) * lineHeight) / 2;
+  const fontWeight = node.role === "primary" ? "600" : "normal";
   const textEls = lines
     .map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
     .join("");
-  const fontWeight = node.role === "primary" ? "600" : "normal";
-  const text = `<text x="${cx}" y="${textStartY}" text-anchor="middle" dominant-baseline="central" font-family="${FONT}" font-size="${node.fontSize}" font-weight="${fontWeight}" fill="#000000">${textEls}</text>`;
+  const text = `<text x="${cx}" y="${textStartY}" text-anchor="middle" dominant-baseline="central" font-family="${FONT}" font-size="${node.fontSize}" font-weight="${fontWeight}" fill="${stroke}">${textEls}</text>`;
 
-  return `<g>${shape}\n${hachure}\n${text}</g>`;
+  return `<g>${shape}\n${text}</g>`;
 }
 
 function renderSubgraph(sg: LayoutSubgraph): string {
   const path = sketchRect(sg.x, sg.y, sg.width, sg.height, 9999);
-  const rect = `<path d="${path}" fill="#f8f9fa" stroke="#868e96" stroke-width="1" stroke-dasharray="8,5" />`;
-  const label = `<text x="${sg.x + 12}" y="${sg.y + 20}" font-family="${FONT}" font-size="13" fill="#868e96" font-weight="600">${escapeXml(sg.label)}</text>`;
+  const rect = `<path d="${path}" fill="none" stroke="#adb5bd" stroke-width="1" stroke-dasharray="8,5" />`;
+  const label = `<text x="${sg.x + 12}" y="${sg.y + 18}" font-family="${FONT}" font-size="13" fill="#868e96" font-weight="600">${escapeXml(sg.label)}</text>`;
   return rect + "\n" + label;
 }
 
 function renderAnnotation(ann: LayoutAnnotation): string {
   const lines = ann.text.split("\n");
-  const fontSize = 12;
+  const fontSize = 13;
   const lineHeight = fontSize * 1.5;
   const textEls = lines
     .map((line, i) => `<tspan x="${ann.x}" dy="${i === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
     .join("");
-  return `<text x="${ann.x}" y="${ann.y}" font-family="${FONT}" font-size="${fontSize}" fill="#868e96" font-style="italic" opacity="0.8">${textEls}</text>`;
+  return `<text x="${ann.x}" y="${ann.y}" font-family="${FONT}" font-size="${fontSize}" fill="#868e96" font-style="italic" opacity="0.85">${textEls}</text>`;
 }
 
 function edgePoint(node: LayoutNode, targetCx: number, targetCy: number): { x: number; y: number } {
@@ -161,49 +145,51 @@ function renderArrow(edge: MermaidEdge, from: LayoutNode, to: LayoutNode, idx: n
   const start = edgePoint(from, toCx, toCy);
   const end = edgePoint(to, fromCx, fromCy);
 
-  // Wobbly curve
-  const midX = (start.x + end.x) / 2 + jitter(idx * 13, 5);
-  const midY = (start.y + end.y) / 2 + jitter(idx * 13 + 1, 5);
-  const line = `<path d="M ${start.x},${start.y} Q ${midX},${midY} ${end.x},${end.y}" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrowhead)" />`;
+  // Red arrows for forward, dark gray for back-edges
+  const isBackEdge = (to.layer ?? 0) <= (from.layer ?? 0);
+  const color = isBackEdge ? "#495057" : "#e03131";
+  const markerId = isBackEdge ? "arrowhead-gray" : "arrowhead-red";
+
+  // Subtle curve
+  const midX = (start.x + end.x) / 2 + jitter(idx * 13, 4);
+  const midY = (start.y + end.y) / 2 + jitter(idx * 13 + 1, 4);
+  const line = `<path d="M ${start.x},${start.y} Q ${midX},${midY} ${end.x},${end.y}" fill="none" stroke="${color}" stroke-width="1.5" marker-end="url(#${markerId})" />`;
 
   let label = "";
   if (edge.label) {
     const lx = (start.x + end.x) / 2;
     const ly = (start.y + end.y) / 2;
-    const tw = edge.label.length * 7.5 + 14;
+    const tw = edge.label.length * 8 + 10;
     const th = 20;
-    label = `<rect x="${lx - tw / 2 - 3}" y="${ly - th / 2 - 4}" width="${tw + 6}" height="${th + 6}" rx="4" fill="white" stroke="none" />`;
-    label += `\n<text x="${lx}" y="${ly - 1}" text-anchor="middle" dominant-baseline="central" font-family="${FONT}" font-size="12" fill="#495057" font-style="italic">${escapeXml(edge.label)}</text>`;
+    // White background behind label for readability
+    label = `<rect x="${lx - tw / 2 - 2}" y="${ly - th / 2 - 3}" width="${tw + 4}" height="${th + 4}" rx="3" fill="white" stroke="none" />`;
+    label += `\n<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="central" font-family="${FONT}" font-size="13" fill="${color}" font-style="italic">${escapeXml(edge.label)}</text>`;
   }
 
   return line + "\n" + label;
 }
 
-// --- Main export ---
+// --- Main ---
 
-export function toSvg(layout: LayoutResult): string {
-  const pad = 50;
+export function toSvg(layout: LayoutResult, title?: string): string {
+  const pad = 60;
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of layout.nodes) {
-    minX = Math.min(minX, n.x);
-    minY = Math.min(minY, n.y);
-    maxX = Math.max(maxX, n.x + n.width);
-    maxY = Math.max(maxY, n.y + n.height);
+    minX = Math.min(minX, n.x);     minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + n.width); maxY = Math.max(maxY, n.y + n.height);
   }
   for (const sg of layout.subgraphs) {
-    minX = Math.min(minX, sg.x);
-    minY = Math.min(minY, sg.y);
-    maxX = Math.max(maxX, sg.x + sg.width);
-    maxY = Math.max(maxY, sg.y + sg.height);
+    minX = Math.min(minX, sg.x);    minY = Math.min(minY, sg.y);
+    maxX = Math.max(maxX, sg.x + sg.width); maxY = Math.max(maxY, sg.y + sg.height);
   }
-  // Expand for annotations
   for (const ann of layout.annotations) {
-    minX = Math.min(minX, ann.x - 100);
-    maxX = Math.max(maxX, ann.x + 100);
-    minY = Math.min(minY, ann.y - 20);
-    maxY = Math.max(maxY, ann.y + 30);
+    minX = Math.min(minX, ann.x - 120); maxX = Math.max(maxX, ann.x + 120);
+    minY = Math.min(minY, ann.y - 25);  maxY = Math.max(maxY, ann.y + 35);
   }
+
+  // Extra top space for title
+  if (title) minY -= 60;
 
   const width = maxX - minX + pad * 2;
   const height = maxY - minY + pad * 2;
@@ -213,8 +199,14 @@ export function toSvg(layout: LayoutResult): string {
   const parts: string[] = [];
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`);
   parts.push(`<rect width="${width}" height="${height}" fill="#ffffff" />`);
-  parts.push(`<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#000000" /></marker></defs>`);
+  parts.push(`<defs>`);
+  parts.push(`  <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#e03131" /></marker>`);
+  parts.push(`  <marker id="arrowhead-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057" /></marker>`);
+  parts.push(`</defs>`);
   parts.push(`<g transform="translate(${offsetX}, ${offsetY})">`);
+
+  // Title
+  if (title) parts.push(renderTitle(title, layout));
 
   // Subgraphs
   for (const sg of layout.subgraphs) parts.push(renderSubgraph(sg));
@@ -231,7 +223,7 @@ export function toSvg(layout: LayoutResult): string {
   // Nodes
   layout.nodes.forEach((node, idx) => parts.push(renderNode(node, idx)));
 
-  // Annotations (the human layer — gray, italic, floating)
+  // Annotations
   for (const ann of layout.annotations) parts.push(renderAnnotation(ann));
 
   parts.push("</g>");
