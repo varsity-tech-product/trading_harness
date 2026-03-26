@@ -11,7 +11,6 @@ graph LR
     A[API Calls] --> B[Context Builder]
     C[Runtime Config] --> B
     D[Trade History] --> B
-    E[Competition Memory] --> B
     B --> F[JSON Context<br/>~15 keys]
     F --> G[Prompt Template]
     H[Tool Catalog] --> G

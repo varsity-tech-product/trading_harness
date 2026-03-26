@@ -199,7 +199,7 @@ def build_setup_context(
 
     # Recent chat messages (for social intelligence)
     try:
-        chat = varsity_tools.get_chat_history(competition_id, 20)
+        chat = varsity_tools.get_chat_history(competition_id, 30)
         if isinstance(chat, dict) and chat.get("list"):
             context["chat_recent"] = [
                 {
@@ -207,7 +207,7 @@ def build_setup_context(
                     "message": msg.get("message", "")[:200],
                     "timestamp": msg.get("createdAt"),
                 }
-                for msg in chat["list"][-10:]
+                for msg in chat["list"][-30:]
             ]
         elif isinstance(chat, list):
             context["chat_recent"] = [
@@ -216,7 +216,7 @@ def build_setup_context(
                     "message": msg.get("message", "")[:200],
                     "timestamp": msg.get("createdAt"),
                 }
-                for msg in chat[-10:]
+                for msg in chat[-30:]
             ]
         else:
             context["chat_recent"] = []
@@ -233,8 +233,8 @@ def build_setup_context(
         except Exception:
             pass
 
-    # Memory from past competitions
-    context["memory"] = [r.to_dict() for r in memory]
+    # Memory from past competitions — excluded from setup context
+    # to reduce prompt size. Memory is available via tools if needed.
 
     # Audit log: summarize what the setup agent will see
     acct = context.get("account_state", {})
