@@ -26,6 +26,18 @@ def build_setup_context(
     """Assemble everything the setup agent needs to make a decision."""
     context: dict[str, Any] = {}
 
+    # Cooldown lock — placed first so the LLM sees it before anything else
+    strategy_start_time = config.get("_strategy_start_time")
+    _cooldown_seconds = config.get("_cooldown_seconds", 1200)
+    _cooldown_min_trades = config.get("_cooldown_min_trades", 5)
+    _age = round(time.time() - strategy_start_time) if strategy_start_time else None
+    _remaining = max(0, _cooldown_seconds - _age) if _age is not None else 0
+    if _remaining > 0:
+        context["STRATEGY_LOCKED"] = (
+            f"Strategy change is LOCKED for {round(_remaining / 60, 1)} more minutes. "
+            "You MUST return action=hold. Analyze the market and chat, but do NOT propose strategy changes."
+        )
+
     if inactivity_alert:
         context["inactivity_alert"] = {
             "active": True,
