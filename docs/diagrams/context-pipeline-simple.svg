@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 712" width="1360" height="712">
+<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057" /></marker></defs>
+<g transform="translate(40, 40)">
+<line x1="152.24806201550388" y1="116" x2="334.031007751938" y2="291" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="208" y1="278" x2="280" y2="296" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="200" y1="388" x2="304.44444444444446" y2="341" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="140.4" y1="560" x2="337.5" y2="341" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="440" y1="316" x2="560" y2="316" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="720" y1="316" x2="840" y2="316" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="1104" y1="316" x2="1120" y2="316" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<rect x="0" y="0" width="184" height="116" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="92" y="28.6" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="92" dy="0">6+ API calls</tspan><tspan x="92" dy="19.599999999999998">(market, account,</tspan><tspan x="92" dy="19.599999999999998">position, trades,</tspan><tspan x="92" dy="19.599999999999998">leaderboard, chat)</tspan></text>
+<rect x="0" y="216" width="208" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="104" y="242.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="104" dy="0">Per-strategy</tspan><tspan x="104" dy="19.599999999999998">performance isolation</tspan></text>
+<rect x="0" y="388" width="240" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="120" y="414.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="120" dy="0">Indicator values</tspan><tspan x="120" dy="19.599999999999998">for threshold calibration</tspan></text>
+<rect x="0" y="560" width="216" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="108" y="586.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="108" dy="0">Expression validation</tspan><tspan x="108" dy="19.599999999999998">errors from last cycle</tspan></text>
+<rect x="280" y="291" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="360" y="316" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="360" dy="0">Context Builder</tspan></text>
+<rect x="560" y="280" width="160" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="640" y="306.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="640" dy="0">Structured JSON</tspan><tspan x="640" dy="19.599999999999998">~15 keys</tspan></text>
+<rect x="840" y="280" width="264" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="972" y="306.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="972" dy="0">Prompt Template</tspan><tspan x="972" dy="19.599999999999998">(role + schema + guidelines)</tspan></text>
+<rect x="1120" y="291" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1200" y="316" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1200" dy="0">Complete Prompt</tspan></text>
+</g>
+</svg>

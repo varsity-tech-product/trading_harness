@@ -103,23 +103,9 @@ If an expression fails validation, the policy defaults to `HOLD` and reports the
 
 ## Decision Flow
 
-```mermaid
-graph TD
-    A[Expression Policy] --> B{Warmup complete?}
-    B -->|No| C[HOLD - indicators still computing]
-    B -->|Yes| D{Validation errors?}
-    D -->|Yes| E[HOLD - report errors to setup agent]
-    D -->|No| F[Build namespace from signal_state]
-    F --> G{Position open?}
-    G -->|Yes| H{Eval exit expression}
-    H -->|True| I[CLOSE_POSITION]
-    H -->|False| J[HOLD]
-    G -->|No| K{Eval entry_long}
-    K -->|True| L[OPEN_LONG]
-    K -->|False| M{Eval entry_short}
-    M -->|True| N[OPEN_SHORT]
-    M -->|False| O[HOLD]
-```
+<picture>
+  <img src="diagrams/expression-engine-flow.svg" alt="Expression Engine Decision Flow" />
+</picture>
 
 ## Ensemble Support
 

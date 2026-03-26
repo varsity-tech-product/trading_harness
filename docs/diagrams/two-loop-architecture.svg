@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1720 370" width="1720" height="370">
+<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057" /></marker></defs>
+<g transform="translate(-200, 90)">
+<rect x="240" y="25" width="1640" height="140" rx="8" ry="8" fill="#f8f9fa" stroke="#868e96" stroke-width="1" stroke-dasharray="6,4" />
+<text x="252" y="43" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#868e96" font-weight="600">Outer Loop (LLM) — every 10-60 min</text>
+<rect x="520" y="-50" width="1080" height="290" rx="8" ry="8" fill="#f8f9fa" stroke="#868e96" stroke-width="1" stroke-dasharray="6,4" />
+<text x="532" y="-32" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#868e96" font-weight="600">Inner Loop (deterministic) — every candle</text>
+<line x1="1680" y1="100" x2="580" y2="100" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+<rect x="1095.5" y="85" width="69" height="26" rx="4" fill="white" stroke="none" opacity="0.9" />
+<text x="1130" y="98" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#495057" font-style="italic">defines</text>
+<line x1="736" y1="100" x2="851.2" y2="100" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+<rect x="752.1" y="85" width="83" height="26" rx="4" fill="white" stroke="none" opacity="0.9" />
+<text x="793.6" y="98" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#495057" font-style="italic">evaluates</text>
+<line x1="1052.8" y1="69.51612903225806" x2="1120" y2="49.19354838709677" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+<rect x="1065.9" y="44.354838709677416" width="41" height="26" rx="4" fill="white" stroke="none" opacity="0.9" />
+<text x="1086.4" y="57.354838709677416" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#495057" font-style="italic">Yes</text>
+<line x1="1280" y1="46.42857142857143" x2="1400" y2="78.57142857142857" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="1052.8" y1="130.48387096774192" x2="1120" y2="150.80645161290323" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+<rect x="1069.4" y="125.64516129032256" width="34" height="26" rx="4" fill="white" stroke="none" opacity="0.9" />
+<text x="1086.4" y="138.64516129032256" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#495057" font-style="italic">No</text>
+<line x1="580" y1="100" x2="560" y2="100" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="1560" y1="100" x2="1680" y2="100" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+<rect x="1540" y="85" width="160" height="26" rx="4" fill="white" stroke="none" opacity="0.9" />
+<text x="1620" y="98" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#495057" font-style="italic">performance feedback</text>
+<rect x="280" y="75" width="300" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="430" y="100" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="430" dy="0">entry_long = rsi_14 &lt; 30 and close &gt; sma_50</tspan></text>
+<rect x="560" y="75" width="176" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="648" y="100" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="648" dy="0">Expression Engine</tspan></text>
+<polygon points="952,50 1064,100 952,150 840,100" fill="#ffec99" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="952" y="100" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="952" dy="0">Signal?</tspan></text>
+<rect x="1120" y="0" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1200" y="25" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1200" dy="0">Strategy Layer</tspan></text>
+<rect x="1120" y="150" width="160" height="50" rx="8" ry="8" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1200" y="175" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1200" dy="0">HOLD</tspan></text>
+<rect x="1400" y="75" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1480" y="100" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1480" dy="0">Execute Trade</tspan></text>
+<rect x="1680" y="75" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1760" y="100" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1760" dy="0">Setup Agent</tspan></text>
+</g>
+</svg>

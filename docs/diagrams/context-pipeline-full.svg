@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2488 730" width="2488" height="730">
+<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057" /></marker></defs>
+<g transform="translate(40, 40)">
+<line x1="103.33333333333333" y1="50" x2="336.6666666666667" y2="300" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="126.66666666666666" y1="200" x2="313.3333333333333" y2="300" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="160" y1="325" x2="280" y2="325" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="136.66666666666666" y1="450" x2="315.3333333333333" y2="350" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="440" y1="300.42857142857144" x2="560" y2="263.57142857142856" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="720" y1="242.14285714285714" x2="840" y2="246.85714285714286" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="136" y1="600" x2="864" y2="275" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="876.5217391304348" y1="275" x2="702.6086956521739" y2="375" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="720" y1="407.85714285714283" x2="840" y2="403.14285714285717" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="1000" y1="378.57142857142856" x2="1120" y2="346.42857142857144" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="1280" y1="325" x2="1400" y2="325" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="1592" y1="325" x2="1680" y2="325" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="1840" y1="325" x2="1960" y2="325" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="2120" y1="325" x2="2240" y2="325" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<rect x="0" y="0" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="80" y="25" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="80" dy="0">API Calls</tspan></text>
+<rect x="0" y="150" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="80" y="175" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="80" dy="0">Runtime Config</tspan></text>
+<rect x="0" y="300" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="80" y="325" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="80" dy="0">Trade History</tspan></text>
+<rect x="0" y="450" width="184" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="92" y="475" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="92" dy="0">Competition Memory</tspan></text>
+<rect x="0" y="600" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="80" y="625" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="80" dy="0">Tool Catalog</tspan></text>
+<rect x="280" y="300" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="360" y="325" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="360" dy="0">Context Builder</tspan></text>
+<rect x="560" y="203" width="160" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="640" y="229.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="640" dy="0">JSON Context</tspan><tspan x="640" dy="19.599999999999998">~15 keys</tspan></text>
+<rect x="560" y="375" width="160" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="640" y="401.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="640" dy="0">Complete Prompt</tspan><tspan x="640" dy="19.599999999999998">2-50KB</tspan></text>
+<rect x="840" y="225" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="920" y="250" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="920" dy="0">Prompt Template</tspan></text>
+<rect x="840" y="375" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="920" y="400" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="920" dy="0">LLM</tspan></text>
+<rect x="1120" y="300" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1200" y="325" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1200" dy="0">Tool Proxy Loop</tspan></text>
+<rect x="1400" y="300" width="192" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1496" y="325" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1496" dy="0">Final Decision JSON</tspan></text>
+<rect x="1680" y="300" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="1760" y="325" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="1760" dy="0">Decision Parser</tspan></text>
+<rect x="1960" y="300" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="2040" y="325" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="2040" dy="0">Cooldown Filter</tspan></text>
+<rect x="2240" y="300" width="168" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="2324" y="325" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="2324" dy="0">Config Overrides</tspan></text>
+</g>
+</svg>

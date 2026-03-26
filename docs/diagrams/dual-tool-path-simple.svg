@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 770" width="640" height="770">
+<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057" /></marker></defs>
+<g transform="translate(40, 40)">
+<line x1="280" y1="50" x2="280" y2="165" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="218.35616438356163" y1="255" x2="129.31506849315068" y2="320" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+<rect x="142.83561643835617" y="272.5" width="62" height="26" rx="4" fill="white" stroke="none" opacity="0.9" />
+<text x="173.83561643835617" y="285.5" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#495057" font-style="italic">Claude</text>
+<line x1="320.06849315068496" y1="255" x2="377.94520547945206" y2="320" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+<rect x="251.5068493150685" y="272.5" width="195" height="26" rx="4" fill="white" stroke="none" opacity="0.9" />
+<text x="349.0068493150685" y="285.5" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#495057" font-style="italic">Gemini / Codex / OpenClaw</text>
+<line x1="128.32214765100673" y1="392" x2="246.4429530201342" y2="480" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="378.59060402684565" y1="392" x2="301.81208053691273" y2="480" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<line x1="280" y1="530" x2="280" y2="640" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+<rect x="200" y="0" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="280" y="25" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="280" dy="0">Setup Agent</tspan></text>
+<polygon points="280,160 392,210 280,260 168,210" fill="#ffec99" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="280" y="210" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="280" dy="0">Backend?</tspan></text>
+<rect x="0" y="320" width="160" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="80" y="346.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="80" dy="0">Native MCP</tspan><tspan x="80" dy="19.599999999999998">(--mcp-config)</tspan></text>
+<rect x="260" y="320" width="300" height="72" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="410" y="346.2" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="410" dy="0">Tool Proxy</tspan><tspan x="410" dy="19.599999999999998">(prompt injection + tool_calls JSON)</tspan></text>
+<rect x="164" y="480" width="232" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="280" y="505" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="280" dy="0">varsity_tools.dispatch()</tspan></text>
+<rect x="200" y="640" width="160" height="50" rx="8" ry="8" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="1.5" />
+<text x="280" y="665" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1e1e1e"><tspan x="280" dy="0">Arena API</tspan></text>
+</g>
+</svg>

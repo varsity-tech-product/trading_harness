@@ -6,23 +6,9 @@ How Arena constructs the setup agent's prompt — a multi-stage pipeline that tu
 
 The setup agent receives a carefully curated snapshot of the trading environment every 10-60 minutes. This isn't a raw data dump — it's a structured context designed to minimize LLM cognitive load while maximizing decision quality.
 
-```mermaid
-graph LR
-    A[API Calls] --> B[Context Builder]
-    C[Runtime Config] --> B
-    D[Trade History] --> B
-    E[Competition Memory] --> B
-    B --> F[JSON Context<br/>~15 keys]
-    F --> G[Prompt Template]
-    H[Tool Catalog] --> G
-    G --> I[Complete Prompt<br/>2-50KB]
-    I --> J[LLM]
-    J --> K[Tool Proxy Loop]
-    K --> L[Final Decision JSON]
-    L --> M[Decision Parser]
-    M --> N[Cooldown Filter]
-    N --> O[Config Overrides]
-```
+<picture>
+  <img src="diagrams/context-pipeline-full.svg" alt="Full Setup Agent Context Pipeline" />
+</picture>
 
 ## Stage 1: Context Building
 

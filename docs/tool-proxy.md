@@ -13,28 +13,9 @@ Most agent frameworks solve this by requiring users to manually configure MCP se
 
 ## The Solution: Two Paths, Same Tools
 
-```mermaid
-graph TD
-    A[Setup Agent] --> B{Which backend?}
-    B -->|Claude| C[Native MCP Path]
-    B -->|Gemini / Codex / OpenClaw| D[Tool Proxy Path]
-
-    C --> E["claude -p --mcp-config .mcp.json"]
-    E --> F[MCP Server - TypeScript]
-    F --> G[Python Bridge - stdio]
-    G --> H["varsity_tools.dispatch()"]
-
-    D --> I["Inject tool catalog into prompt"]
-    I --> J[LLM returns tool_calls JSON]
-    J --> K["Execute locally via dispatch()"]
-    K --> L[Append results to prompt]
-    L --> M{More tool calls?}
-    M -->|Yes| J
-    M -->|No| N[Final decision]
-
-    H --> O[Arena API]
-    K --> O
-```
+<picture>
+  <img src="diagrams/dual-tool-path-detailed.svg" alt="Dual Tool Path — Detailed" />
+</picture>
 
 Both paths call the same `varsity_tools.dispatch()` function. Zero tool reimplementation.
 
