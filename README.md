@@ -191,7 +191,7 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=varsity-tech-product/arena&type=Date)](https://star-history.com/#varsity-tech-product/arena&Date)
+[![Star History Chart](https://star-history.com/svg?repos=varsity-tech-product/arena&type=Date)](https://star-history.com/#varsity-tech-product/arena&Date)
 
 ## License
 
