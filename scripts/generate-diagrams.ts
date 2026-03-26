@@ -18,16 +18,22 @@ mkdirSync(outDir, { recursive: true });
 let count = 0;
 for (const diagram of DIAGRAMS) {
   const graph = parseMermaid(diagram.mermaid);
-  const layout = computeLayout(graph);
+  const layout = computeLayout(graph, diagram.annotations);
 
-  const excalidraw = toExcalidraw(layout, { title: diagram.title });
-  writeFileSync(resolve(outDir, diagram.outputFile), JSON.stringify(excalidraw, null, 2));
+  writeFileSync(
+    resolve(outDir, diagram.outputFile),
+    JSON.stringify(toExcalidraw(layout), null, 2),
+  );
 
   const svgName = diagram.outputFile.replace(".excalidraw", ".svg");
   writeFileSync(resolve(outDir, svgName), toSvg(layout));
 
-  console.log(`  ✓ ${diagram.name} → ${diagram.outputFile} + ${svgName} (${graph.nodes.length} nodes, ${graph.edges.length} edges)`);
+  const roles = layout.nodes.map((n) => n.role);
+  const roleCounts = roles.reduce((acc, r) => { acc[r] = (acc[r] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const roleStr = Object.entries(roleCounts).map(([r, c]) => `${c} ${r}`).join(", ");
+
+  console.log(`  ✓ ${diagram.name} (${roleStr}, ${diagram.annotations.length} annotations)`);
   count++;
 }
 
-console.log(`\nGenerated ${count} diagrams (Excalidraw + SVG) in ${outDir}`);
+console.log(`\nGenerated ${count} diagrams in ${outDir}`);

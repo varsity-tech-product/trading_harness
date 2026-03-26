@@ -1,10 +1,13 @@
-// The 6 Mermaid diagram definitions, embedded directly from docs
+// Diagram definitions with semantic annotations
+
+import type { Annotation } from "./types.js";
 
 export interface DiagramDef {
   name: string;
   title: string;
   outputFile: string;
   mermaid: string;
+  annotations: Annotation[];
 }
 
 export const DIAGRAMS: DiagramDef[] = [
@@ -24,6 +27,11 @@ export const DIAGRAMS: DiagramDef[] = [
     end
     B --> C
     F -->|performance feedback| A`,
+    annotations: [
+      { text: "~$0.005 / cycle\nno per-tick API calls", nearNode: "A", offsetX: -200, offsetY: 5 },
+      { text: "pure math, zero latency", nearNode: "C", offsetX: -190, offsetY: 5 },
+      { text: "closes the loop", nearNode: "F", offsetX: 160, offsetY: 0 },
+    ],
   },
   {
     name: "dual-tool-path-simple",
@@ -36,6 +44,11 @@ export const DIAGRAMS: DiagramDef[] = [
     C --> E["varsity_tools.dispatch()"]
     D --> E
     E --> F[Arena API]`,
+    annotations: [
+      { text: "built-in MCP support", nearNode: "C", offsetX: -180, offsetY: 5 },
+      { text: "catalog injected into prompt", nearNode: "D", offsetX: 200, offsetY: 5 },
+      { text: "same function, zero reimplementation", nearNode: "E", offsetX: 210, offsetY: 0 },
+    ],
   },
   {
     name: "context-pipeline-simple",
@@ -49,6 +62,10 @@ export const DIAGRAMS: DiagramDef[] = [
     B --> F["Structured JSON<br/>~15 keys"]
     F --> G["Prompt Template<br/>(role + schema + guidelines)"]
     G --> H["Complete Prompt"]`,
+    annotations: [
+      { text: "curated, not raw dump", nearNode: "B", offsetX: 200, offsetY: 0 },
+      { text: "LLM sees this →\nminimize cognitive load", nearNode: "H", offsetX: 190, offsetY: 0 },
+    ],
   },
   {
     name: "context-pipeline-full",
@@ -69,6 +86,11 @@ export const DIAGRAMS: DiagramDef[] = [
     L --> M[Decision Parser]
     M --> N[Cooldown Filter]
     N --> O[Config Overrides]`,
+    annotations: [
+      { text: "6+ live endpoints", nearNode: "A", offsetX: -160, offsetY: 5 },
+      { text: "max 5 rounds, 80KB budget", nearNode: "K", offsetX: 200, offsetY: 0 },
+      { text: "prevents spam trading", nearNode: "N", offsetX: 185, offsetY: 0 },
+    ],
   },
   {
     name: "expression-engine-flow",
@@ -89,6 +111,11 @@ export const DIAGRAMS: DiagramDef[] = [
     K -->|False| M{Eval entry_short}
     M -->|True| N[OPEN_SHORT]
     M -->|False| O[HOLD]`,
+    annotations: [
+      { text: "AST-validated\n158 indicators available", nearNode: "A", offsetX: -210, offsetY: 5 },
+      { text: "safe eval() — empty __builtins__", nearNode: "F", offsetX: 220, offsetY: 0 },
+      { text: "errors fed back\nto LLM next cycle", nearNode: "E", offsetX: 200, offsetY: 0 },
+    ],
   },
   {
     name: "dual-tool-path-detailed",
@@ -111,5 +138,10 @@ export const DIAGRAMS: DiagramDef[] = [
     M -->|No| N[Final decision]
     H --> O[Arena API]
     K --> O`,
+    annotations: [
+      { text: "per-call --mcp-config", nearNode: "E", offsetX: -200, offsetY: 0 },
+      { text: "budget: 80KB total\nmax 5 rounds", nearNode: "M", offsetX: 210, offsetY: 0 },
+      { text: "same dispatch() →\nzero reimplementation", nearNode: "O", offsetX: 200, offsetY: 0 },
+    ],
   },
 ];

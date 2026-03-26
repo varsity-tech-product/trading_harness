@@ -1,43 +1,28 @@
-// Converts layout result to Excalidraw JSON — sketch style
+// Converts layout result to Excalidraw JSON — intent-driven sketch style
 
-import type { LayoutResult, LayoutNode, LayoutSubgraph, MermaidEdge } from "./types.js";
+import type { LayoutResult, LayoutNode, LayoutSubgraph, LayoutAnnotation, MermaidEdge, NodeRole } from "./types.js";
 
 let _nextId = 1;
 let _nextSeed = 100000;
-function uid(prefix: string): string {
-  return `${prefix}_${_nextId++}`;
-}
-function seed(): number {
-  return _nextSeed++;
-}
+function uid(prefix: string): string { return `${prefix}_${_nextId++}`; }
+function seed(): number { return _nextSeed++; }
 
-// Seeded PRNG for deterministic "imperfection"
-function jitter(seed: number, range: number): number {
-  const x = Math.sin(seed * 9301 + 49297) * 49297;
-  return (x - Math.floor(x) - 0.5) * range;
-}
+// --- Semantic color mapping ---
 
-// Color logic
-function fillColor(node: LayoutNode): string {
-  const label = node.label.toLowerCase();
-  if (node.shape === "diamond") return "#ffec99"; // yellow
-  if (/\b(hold|close_position|open_long|open_short)\b/.test(label)) return "#b2f2bb"; // green
-  if (/\b(error|report error|fail)\b/.test(label)) return "#ffc9c9"; // red
-  return "#a5d8ff"; // blue
-}
+const ROLE_COLORS: Record<NodeRole, string> = {
+  primary:     "#a5d8ff", // strong blue
+  decision:    "#ffec99", // yellow
+  result:      "#b2f2bb", // green
+  error:       "#ffc9c9", // red
+  system:      "#d0ebff", // light blue
+  convergence: "#e5dbff", // light purple — where paths merge
+};
 
-interface ExcalidrawElement {
-  [key: string]: unknown;
-}
+interface ExcalidrawElement { [key: string]: unknown; }
 
 function baseProps(id: string, type: string, x: number, y: number, w: number, h: number): ExcalidrawElement {
   return {
-    id,
-    type,
-    x,
-    y,
-    width: w,
-    height: h,
+    id, type, x, y, width: w, height: h,
     angle: 0,
     strokeColor: "#000000",
     backgroundColor: "transparent",
@@ -61,42 +46,40 @@ function baseProps(id: string, type: string, x: number, y: number, w: number, h:
   };
 }
 
-function makeShape(node: LayoutNode, idx: number): { shape: ExcalidrawElement; text: ExcalidrawElement } {
+function makeShape(node: LayoutNode): { shape: ExcalidrawElement; text: ExcalidrawElement } {
   const shapeId = uid("shape");
   const textId = uid("text");
   const type = node.shape === "diamond" ? "diamond" : "rectangle";
 
-  // Slight imperfection — nudge position by ±3px
-  const nudgeX = jitter(idx * 7 + 1, 6);
-  const nudgeY = jitter(idx * 7 + 2, 6);
+  const strokeWidth = node.role === "primary" ? 2 : 1.5;
 
   const shape: ExcalidrawElement = {
-    ...baseProps(shapeId, type, node.x + nudgeX, node.y + nudgeY, node.width, node.height),
-    backgroundColor: fillColor(node),
+    ...baseProps(shapeId, type, node.x, node.y, node.width, node.height),
+    backgroundColor: ROLE_COLORS[node.role],
+    strokeWidth,
     roundness: type === "rectangle" ? { type: 3 } : { type: 2 },
     boundElements: [{ id: textId, type: "text" }],
   };
 
-  const fontSize = 16;
   const lines = node.label.split("\n");
-  const textHeight = lines.length * fontSize * 1.25;
+  const textHeight = lines.length * node.fontSize * 1.25;
   const textWidth = node.width - 20;
 
   const text: ExcalidrawElement = {
     ...baseProps(textId, "text",
-      node.x + nudgeX + (node.width - textWidth) / 2,
-      node.y + nudgeY + (node.height - textHeight) / 2,
+      node.x + (node.width - textWidth) / 2,
+      node.y + (node.height - textHeight) / 2,
       textWidth, textHeight),
     text: node.label,
-    fontSize,
-    fontFamily: 1, // Virgil (hand-drawn)
+    fontSize: node.fontSize,
+    fontFamily: 1, // Virgil
     textAlign: "center",
     verticalAlign: "middle",
     containerId: shapeId,
     originalText: node.label,
     autoResize: true,
     lineHeight: 1.25,
-    roughness: 0, // text itself shouldn't be rough
+    roughness: 0,
   };
 
   return { shape, text };
@@ -118,13 +101,10 @@ function makeSubgraph(sg: LayoutSubgraph): { rect: ExcalidrawElement; label: Exc
     boundElements: [{ id: labelId, type: "text" }],
   };
 
-  const fontSize = 14;
-  const labelHeight = fontSize * 1.25;
-
   const label: ExcalidrawElement = {
-    ...baseProps(labelId, "text", sg.x + 10, sg.y + 8, sg.width - 20, labelHeight),
+    ...baseProps(labelId, "text", sg.x + 10, sg.y + 8, sg.width - 20, 17),
     text: sg.label,
-    fontSize,
+    fontSize: 14,
     fontFamily: 1,
     textAlign: "left",
     verticalAlign: "top",
@@ -138,6 +118,30 @@ function makeSubgraph(sg: LayoutSubgraph): { rect: ExcalidrawElement; label: Exc
   return { rect, label };
 }
 
+function makeAnnotation(ann: LayoutAnnotation): ExcalidrawElement {
+  const id = uid("ann");
+  const lines = ann.text.split("\n");
+  const fontSize = 13;
+  const maxLen = Math.max(...lines.map((l) => l.length));
+  const width = maxLen * 7 + 16;
+  const height = lines.length * fontSize * 1.4;
+
+  return {
+    ...baseProps(id, "text", ann.x - width / 2, ann.y - height / 2, width, height),
+    text: ann.text,
+    fontSize,
+    fontFamily: 1,
+    textAlign: "left",
+    verticalAlign: "middle",
+    strokeColor: "#868e96", // gray — annotation layer
+    opacity: 85,
+    originalText: ann.text,
+    autoResize: true,
+    lineHeight: 1.4,
+    roughness: 0,
+  };
+}
+
 function makeArrow(
   edge: MermaidEdge,
   fromNode: LayoutNode,
@@ -149,7 +153,6 @@ function makeArrow(
   const fromCy = fromNode.y + fromNode.height / 2;
   const toCx = toNode.x + toNode.width / 2;
   const toCy = toNode.y + toNode.height / 2;
-
   const dx = toCx - fromCx;
   const dy = toCy - fromCy;
 
@@ -160,18 +163,8 @@ function makeArrow(
     roundness: { type: 2 },
     points: [[0, 0], [dx, dy]],
     lastCommittedPoint: null,
-    startBinding: {
-      elementId: "",
-      focus: 0,
-      gap: 8,
-      fixedPoint: null,
-    },
-    endBinding: {
-      elementId: "",
-      focus: 0,
-      gap: 8,
-      fixedPoint: null,
-    },
+    startBinding: { elementId: "", focus: 0, gap: 8, fixedPoint: null },
+    endBinding: { elementId: "", focus: 0, gap: 8, fixedPoint: null },
     startArrowhead: null,
     endArrowhead: "arrow",
     elbowed: false,
@@ -180,8 +173,8 @@ function makeArrow(
   let labelEl: ExcalidrawElement | undefined;
   if (edge.label) {
     const labelId = uid("elabel");
-    const fontSize = 14;
-    const labelWidth = edge.label.length * 8 + 16;
+    const fontSize = 13;
+    const labelWidth = edge.label.length * 7 + 16;
     const labelHeight = fontSize * 1.25;
     const midX = fromCx + dx / 2 - labelWidth / 2;
     const midY = fromCy + dy / 2 - labelHeight / 2 - 12;
@@ -199,41 +192,32 @@ function makeArrow(
       lineHeight: 1.25,
       roughness: 0,
     };
-
     (arrow.boundElements as unknown[]) = [{ id: labelId, type: "text" }];
   }
 
   return { arrow, label: labelEl };
 }
 
-export interface WriterOptions {
-  title?: string;
-}
-
-export function toExcalidraw(layout: LayoutResult, _options?: WriterOptions): object {
+export function toExcalidraw(layout: LayoutResult): object {
   _nextId = 1;
   _nextSeed = 100000;
 
   const elements: ExcalidrawElement[] = [];
   const nodeToShapeId = new Map<string, string>();
-  const nodeLayoutMap = new Map<string, LayoutNode>();
+  const nodeLayoutMap = new Map(layout.nodes.map((n) => [n.id, n]));
 
-  for (const n of layout.nodes) {
-    nodeLayoutMap.set(n.id, n);
-  }
-
-  // Subgraphs first (behind nodes)
+  // Subgraphs (background)
   for (const sg of layout.subgraphs) {
     const { rect, label } = makeSubgraph(sg);
     elements.push(rect, label);
   }
 
   // Nodes
-  layout.nodes.forEach((node, idx) => {
-    const { shape, text } = makeShape(node, idx);
+  for (const node of layout.nodes) {
+    const { shape, text } = makeShape(node);
     nodeToShapeId.set(node.id, shape.id as string);
     elements.push(shape, text);
-  });
+  }
 
   // Arrows
   const shapeArrows = new Map<string, { id: string; type: string }[]>();
@@ -244,7 +228,6 @@ export function toExcalidraw(layout: LayoutResult, _options?: WriterOptions): ob
     if (!fromNode || !toNode) continue;
 
     const { arrow, label } = makeArrow(edge, fromNode, toNode);
-
     const fromShapeId = nodeToShapeId.get(edge.from)!;
     const toShapeId = nodeToShapeId.get(edge.to)!;
     (arrow.startBinding as { elementId: string }).elementId = fromShapeId;
@@ -268,15 +251,17 @@ export function toExcalidraw(layout: LayoutResult, _options?: WriterOptions): ob
     }
   }
 
+  // Annotations (floating gray text — the human layer)
+  for (const ann of layout.annotations) {
+    elements.push(makeAnnotation(ann));
+  }
+
   return {
     type: "excalidraw",
     version: 2,
     source: "arena-diagram-generator",
     elements,
-    appState: {
-      gridSize: null,
-      viewBackgroundColor: "#ffffff",
-    },
+    appState: { gridSize: null, viewBackgroundColor: "#ffffff" },
     files: {},
   };
 }

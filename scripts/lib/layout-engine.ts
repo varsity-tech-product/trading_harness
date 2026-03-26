@@ -1,38 +1,94 @@
-// Layered graph layout engine — assigns (x,y) coordinates to nodes
+// Intent-driven layout engine — semantic roles control sizing, spacing, and visual weight
 
-import type { MermaidGraph, LayoutNode, LayoutSubgraph, LayoutResult } from "./types.js";
+import type {
+  MermaidGraph, MermaidNode, LayoutNode, LayoutSubgraph, LayoutResult,
+  NodeRole, Annotation, LayoutAnnotation,
+} from "./types.js";
 
-const NODE_H_GAP = 280; // horizontal gap between layers (LR)
-const NODE_V_GAP = 140; // vertical gap between layers (TD)
-const NODE_SPACING = 60;  // gap between nodes in same layer
-const SUBGRAPH_PAD = 40;
-const SUBGRAPH_TOP_PAD = 50; // extra top for label
-const BASE_WIDTH = 160;
-const MAX_WIDTH = 300;
-const BASE_HEIGHT = 50;
-const LINE_HEIGHT = 22;
-const CHAR_WIDTH = 8;
-const DIAMOND_SCALE = 1.4;
-
-function measureNode(label: string, shape: string): { width: number; height: number } {
-  const lines = label.split("\n");
-  const maxLineLen = Math.max(...lines.map((l) => l.length));
-  let width = Math.max(BASE_WIDTH, maxLineLen * CHAR_WIDTH + 40);
-  width = Math.min(width, MAX_WIDTH);
-  let height = BASE_HEIGHT + (lines.length - 1) * LINE_HEIGHT;
-
-  if (shape === "diamond") {
-    width = Math.max(width * DIAMOND_SCALE, 130);
-    height = Math.max(height * DIAMOND_SCALE, 100);
-  }
-
-  return { width, height };
+// Seeded PRNG for deterministic asymmetry
+function jitter(seed: number, range: number): number {
+  const x = Math.sin(seed * 9301 + 49297) * 49297;
+  return (x - Math.floor(x) - 0.5) * range;
 }
 
-export function computeLayout(graph: MermaidGraph): LayoutResult {
-  const { direction, nodes, edges, subgraphs } = graph;
+// --- Semantic role detection ---
 
-  // Build adjacency for layer assignment
+function detectRole(
+  node: MermaidNode,
+  parentCount: number,
+  childCount: number,
+  convergenceIds: Set<string>,
+): NodeRole {
+  const label = node.label.toLowerCase();
+
+  if (node.shape === "diamond") return "decision";
+  if (/\b(hold|close_position|open_long|open_short|final decision)\b/.test(label)) return "result";
+  if (/\b(error|report error|fail)\b/.test(label)) return "error";
+  if (convergenceIds.has(node.id)) return "convergence";
+  if (parentCount === 0) return "primary"; // root nodes
+  return "system";
+}
+
+// --- Sizing per role ---
+
+const CHAR_WIDTH = 8.5;
+const LINE_HEIGHT = 22;
+
+interface SizeSpec {
+  baseWidth: number;
+  maxWidth: number;
+  baseHeight: number;
+  fontSize: number;
+  diamondScale: number;
+}
+
+const ROLE_SIZES: Record<NodeRole, SizeSpec> = {
+  primary:      { baseWidth: 200, maxWidth: 340, baseHeight: 60, fontSize: 18, diamondScale: 1.4 },
+  decision:     { baseWidth: 160, maxWidth: 280, baseHeight: 50, fontSize: 15, diamondScale: 1.4 },
+  system:       { baseWidth: 150, maxWidth: 300, baseHeight: 46, fontSize: 14, diamondScale: 1.4 },
+  convergence:  { baseWidth: 180, maxWidth: 320, baseHeight: 50, fontSize: 15, diamondScale: 1.4 },
+  result:       { baseWidth: 130, maxWidth: 240, baseHeight: 40, fontSize: 13, diamondScale: 1.3 },
+  error:        { baseWidth: 130, maxWidth: 260, baseHeight: 40, fontSize: 13, diamondScale: 1.3 },
+};
+
+function measureNode(label: string, shape: string, role: NodeRole): { width: number; height: number; fontSize: number } {
+  const spec = ROLE_SIZES[role];
+  const lines = label.split("\n");
+  const maxLineLen = Math.max(...lines.map((l) => l.length));
+  let width = Math.max(spec.baseWidth, maxLineLen * CHAR_WIDTH + 36);
+  width = Math.min(width, spec.maxWidth);
+  let height = spec.baseHeight + (lines.length - 1) * LINE_HEIGHT;
+
+  if (shape === "diamond") {
+    width = Math.max(width * spec.diamondScale, 120);
+    height = Math.max(height * spec.diamondScale, 90);
+  }
+
+  return { width, height, fontSize: spec.fontSize };
+}
+
+// --- Spacing per role ---
+
+function gapAfterLayer(dominantRole: NodeRole): number {
+  switch (dominantRole) {
+    case "primary": return 160;
+    case "decision": return 140;
+    case "convergence": return 130;
+    default: return 110;
+  }
+}
+
+const SIBLING_GAP = 50;
+
+// --- Main layout ---
+
+export function computeLayout(
+  graph: MermaidGraph,
+  annotations: Annotation[] = [],
+): LayoutResult {
+  const { nodes, edges, subgraphs } = graph;
+
+  // Build adjacency
   const children = new Map<string, string[]>();
   const parents = new Map<string, string[]>();
   const nodeIds = new Set(nodes.map((n) => n.id));
@@ -41,30 +97,21 @@ export function computeLayout(graph: MermaidGraph): LayoutResult {
     children.set(n.id, []);
     parents.set(n.id, []);
   }
-  // Track back-edges (cycles) — skip them in layer assignment
-  const forwardEdges: typeof edges = [];
-  const backEdges: typeof edges = [];
 
-  // First pass: assign layers via BFS ignoring cycles
   for (const e of edges) {
     if (nodeIds.has(e.from) && nodeIds.has(e.to)) {
       children.get(e.from)!.push(e.to);
       parents.get(e.to)!.push(e.from);
-      forwardEdges.push(e);
     }
   }
 
-  // Topological layer assignment (Kahn's algorithm variant)
+  // Topological layer assignment (BFS from roots) — needed before role detection
   const layers = new Map<string, number>();
-  const roots = nodes.filter((n) => parents.get(n.id)!.length === 0).map((n) => n.id);
+  const bfsRoots = nodes.filter((n) => parents.get(n.id)!.length === 0).map((n) => n.id);
+  if (bfsRoots.length === 0 && nodes.length > 0) bfsRoots.push(nodes[0].id);
 
-  // If no roots (everything in a cycle), pick first node
-  if (roots.length === 0 && nodes.length > 0) {
-    roots.push(nodes[0].id);
-  }
-
-  const queue = [...roots];
-  for (const r of roots) layers.set(r, 0);
+  const queue = [...bfsRoots];
+  for (const r of bfsRoots) layers.set(r, 0);
 
   while (queue.length > 0) {
     const current = queue.shift()!;
@@ -73,24 +120,34 @@ export function computeLayout(graph: MermaidGraph): LayoutResult {
       const existing = layers.get(child);
       if (existing === undefined || existing < currentLayer + 1) {
         layers.set(child, currentLayer + 1);
-        // Only enqueue if not already processed at this or higher layer
-        if (existing === undefined) {
-          queue.push(child);
-        }
+        if (existing === undefined) queue.push(child);
       }
     }
   }
 
-  // Detect back-edges: edge goes to same or earlier layer
-  const actualForward: typeof edges = [];
-  for (const e of forwardEdges) {
-    const fromLayer = layers.get(e.from) ?? 0;
-    const toLayer = layers.get(e.to) ?? 0;
-    if (toLayer <= fromLayer) {
-      backEdges.push(e);
-    } else {
-      actualForward.push(e);
+  // Count only forward-edge parents (ignore back-edges for role detection)
+  const forwardParentCount = new Map<string, number>();
+  for (const n of nodes) forwardParentCount.set(n.id, 0);
+  for (const e of edges) {
+    if (nodeIds.has(e.from) && nodeIds.has(e.to)) {
+      const fromLayer = layers.get(e.from) ?? 0;
+      const toLayer = layers.get(e.to) ?? 0;
+      if (toLayer > fromLayer) { // forward edge only
+        forwardParentCount.set(e.to, (forwardParentCount.get(e.to) || 0) + 1);
+      }
     }
+  }
+
+  // Detect convergence nodes (multiple forward parents)
+  const convergenceIds = new Set<string>();
+  for (const [id, count] of forwardParentCount) {
+    if (count >= 2) convergenceIds.add(id);
+  }
+
+  // Assign semantic roles using forward-edge parent counts
+  const roles = new Map<string, NodeRole>();
+  for (const n of nodes) {
+    roles.set(n.id, detectRole(n, forwardParentCount.get(n.id) || 0, children.get(n.id)!.length, convergenceIds));
   }
 
   // Group nodes by layer
@@ -102,105 +159,122 @@ export function computeLayout(graph: MermaidGraph): LayoutResult {
   }
 
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-
-  // Compute positions
-  const layoutNodes: LayoutNode[] = [];
-  const isLR = direction === "LR";
-
   const sortedLayers = Array.from(layerGroups.keys()).sort((a, b) => a - b);
+
+  // --- Compute Y positions (variable spacing per layer) ---
+  const layerY = new Map<number, number>();
+  let yAccum = 0;
+
+  for (let i = 0; i < sortedLayers.length; i++) {
+    const layerIdx = sortedLayers[i];
+    layerY.set(layerIdx, yAccum);
+
+    // Variable gap after this layer based on dominant role
+    const group = layerGroups.get(layerIdx)!;
+    const dominantRole = group.map((id) => roles.get(id)!).sort((a, b) => {
+      const priority: Record<NodeRole, number> = { primary: 0, decision: 1, convergence: 2, system: 3, result: 4, error: 4 };
+      return priority[a] - priority[b];
+    })[0];
+
+    if (i < sortedLayers.length - 1) {
+      // Measure max height in this layer for spacing
+      const maxH = Math.max(...group.map((id) => {
+        const n = nodeMap.get(id)!;
+        return measureNode(n.label, n.shape, roles.get(id)!).height;
+      }));
+      yAccum += maxH + gapAfterLayer(dominantRole);
+    }
+  }
+
+  // --- Compute X positions (asymmetric branching) ---
+  const layoutNodes: LayoutNode[] = [];
 
   for (const layerIdx of sortedLayers) {
     const group = layerGroups.get(layerIdx)!;
+    const y = layerY.get(layerIdx)!;
 
-    for (let i = 0; i < group.length; i++) {
-      const nodeId = group[i];
-      const node = nodeMap.get(nodeId)!;
-      const { width, height } = measureNode(node.label, node.shape);
+    // Measure all nodes in this layer
+    const measured = group.map((id) => {
+      const node = nodeMap.get(id)!;
+      const role = roles.get(id)!;
+      const m = measureNode(node.label, node.shape, role);
+      return { id, node, role, ...m };
+    });
 
-      let x: number, y: number;
-      if (isLR) {
-        x = layerIdx * NODE_H_GAP;
-        y = i * (height + NODE_SPACING);
-      } else {
-        x = i * (width + NODE_SPACING);
-        y = layerIdx * NODE_V_GAP;
-      }
+    // Total width of this layer
+    const totalWidth = measured.reduce((sum, m) => sum + m.width, 0) + (measured.length - 1) * SIBLING_GAP;
+    let xStart = -totalWidth / 2; // center around 0
+
+    for (let i = 0; i < measured.length; i++) {
+      const m = measured[i];
+      // Intentional asymmetry: alternate ±8-18px nudge, skip primary
+      const nudge = m.role === "primary" ? 0 : jitter(layerIdx * 100 + i * 17, 20);
 
       layoutNodes.push({
-        ...node,
-        x,
-        y,
-        width,
-        height,
+        ...m.node,
+        x: xStart + nudge,
+        y: y + jitter(layerIdx * 100 + i * 31, 8), // slight vertical wobble
+        width: m.width,
+        height: m.height,
         layer: layerIdx,
+        role: m.role,
+        fontSize: m.fontSize,
       });
+
+      xStart += m.width + SIBLING_GAP;
     }
   }
 
-  // Center each layer's nodes around the midpoint of the widest layer
-  const layerSizes = new Map<number, number>();
-  for (const layerIdx of sortedLayers) {
-    const layerNodes = layoutNodes.filter((n) => n.layer === layerIdx);
-    if (layerNodes.length === 0) continue;
-
-    if (isLR) {
-      const totalHeight = layerNodes.reduce((sum, n) => sum + n.height, 0) + (layerNodes.length - 1) * NODE_SPACING;
-      layerSizes.set(layerIdx, totalHeight);
-    } else {
-      const totalWidth = layerNodes.reduce((sum, n) => sum + n.width, 0) + (layerNodes.length - 1) * NODE_SPACING;
-      layerSizes.set(layerIdx, totalWidth);
-    }
+  // --- Shift all nodes so min x is at a reasonable origin ---
+  const minX = Math.min(...layoutNodes.map((n) => n.x));
+  const minY = Math.min(...layoutNodes.map((n) => n.y));
+  for (const n of layoutNodes) {
+    n.x -= minX;
+    n.y -= minY;
   }
 
-  const maxSpan = Math.max(...layerSizes.values());
+  // --- Subgraph bounding boxes ---
+  const SUBGRAPH_PAD = 40;
+  const SUBGRAPH_TOP_PAD = 50;
 
-  for (const layerIdx of sortedLayers) {
-    const layerNodes = layoutNodes.filter((n) => n.layer === layerIdx);
-    const span = layerSizes.get(layerIdx) || 0;
-    const offset = (maxSpan - span) / 2;
-
-    if (isLR) {
-      // Recompute y with centering
-      let yAccum = offset;
-      for (const n of layerNodes) {
-        n.y = yAccum;
-        yAccum += n.height + NODE_SPACING;
-      }
-    } else {
-      // Recompute x with centering
-      let xAccum = offset;
-      for (const n of layerNodes) {
-        n.x = xAccum;
-        xAccum += n.width + NODE_SPACING;
-      }
-    }
-  }
-
-  // Compute subgraph bounding boxes
   const layoutSubgraphs: LayoutSubgraph[] = subgraphs.map((sg) => {
     const members = layoutNodes.filter((n) => n.subgraph === sg.id);
-    if (members.length === 0) {
-      return { ...sg, x: 0, y: 0, width: 200, height: 100 };
-    }
+    if (members.length === 0) return { ...sg, x: 0, y: 0, width: 200, height: 100 };
 
-    const minX = Math.min(...members.map((n) => n.x));
-    const minY = Math.min(...members.map((n) => n.y));
-    const maxX = Math.max(...members.map((n) => n.x + n.width));
-    const maxY = Math.max(...members.map((n) => n.y + n.height));
+    const sMinX = Math.min(...members.map((n) => n.x));
+    const sMinY = Math.min(...members.map((n) => n.y));
+    const sMaxX = Math.max(...members.map((n) => n.x + n.width));
+    const sMaxY = Math.max(...members.map((n) => n.y + n.height));
 
     return {
       ...sg,
-      x: minX - SUBGRAPH_PAD,
-      y: minY - SUBGRAPH_TOP_PAD,
-      width: maxX - minX + SUBGRAPH_PAD * 2,
-      height: maxY - minY + SUBGRAPH_PAD + SUBGRAPH_TOP_PAD,
+      x: sMinX - SUBGRAPH_PAD,
+      y: sMinY - SUBGRAPH_TOP_PAD,
+      width: sMaxX - sMinX + SUBGRAPH_PAD * 2,
+      height: sMaxY - sMinY + SUBGRAPH_PAD + SUBGRAPH_TOP_PAD,
     };
   });
 
+  // --- Position annotations near their anchor nodes ---
+  const nodeLayoutMap = new Map(layoutNodes.map((n) => [n.id, n]));
+
+  const layoutAnnotations: LayoutAnnotation[] = annotations
+    .map((a) => {
+      const anchor = nodeLayoutMap.get(a.nearNode);
+      if (!anchor) return null;
+      return {
+        ...a,
+        x: anchor.x + anchor.width / 2 + (a.offsetX ?? 0),
+        y: anchor.y + anchor.height / 2 + (a.offsetY ?? 0),
+      };
+    })
+    .filter(Boolean) as LayoutAnnotation[];
+
   return {
-    direction,
+    direction: graph.direction,
     nodes: layoutNodes,
-    edges, // return all edges including back-edges
+    edges,
     subgraphs: layoutSubgraphs,
+    annotations: layoutAnnotations,
   };
 }
