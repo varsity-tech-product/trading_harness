@@ -57,8 +57,10 @@ class LoopStatusPanel(Static):
         style, label = _PHASE_BADGES.get(phase, ("bold white on grey50", f" {phase.upper()} "))
         line.append(label, style=style)
 
-        # Cycle + elapsed
-        line.append(f"  cycle {cycle}", style="bold")
+        # Backend + cycle + elapsed
+        backend = auto.get("setup_backend") or "unknown"
+        line.append(f"  {backend}", style="bold")
+        line.append(f" | cycle {cycle}")
         if elapsed:
             line.append(f" | {elapsed}")
 

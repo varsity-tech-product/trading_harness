@@ -232,8 +232,29 @@ class SetupDecision:
         }
 
 
+def _get_valid_talib_names() -> set[str]:
+    """Return the set of valid TA-Lib function names."""
+    try:
+        import talib
+        return set(talib.get_functions())
+    except Exception:
+        return set()
+
+
+_VALID_TALIB_NAMES: set[str] | None = None
+
+
+def _is_valid_talib_indicator(name: str) -> bool:
+    global _VALID_TALIB_NAMES
+    if _VALID_TALIB_NAMES is None:
+        _VALID_TALIB_NAMES = _get_valid_talib_names()
+    return name.upper() in _VALID_TALIB_NAMES
+
+
 def _parse_indicator_spec(indicator_str: str) -> dict[str, Any] | None:
     """Parse 'NAME_PERIOD' format to FeatureSpec dict.
+
+    Only accepts indicators that exist in TA-Lib.
 
     Examples:
         'SMA_20' -> {'indicator': 'SMA', 'params': {'timeperiod': 20}}
@@ -248,9 +269,19 @@ def _parse_indicator_spec(indicator_str: str) -> dict[str, Any] | None:
     if match:
         name = match.group(1)
         period = int(match.group(2))
+        if not _is_valid_talib_indicator(name):
+            logging.getLogger("arena_agent.setup_agent").warning(
+                "Indicator '%s' not found in TA-Lib — skipping", name,
+            )
+            return None
         return {"indicator": name, "params": {"timeperiod": period}}
     # No period — just the indicator name
     if re.match(r"^[A-Z_]+$", indicator_str):
+        if not _is_valid_talib_indicator(indicator_str):
+            logging.getLogger("arena_agent.setup_agent").warning(
+                "Indicator '%s' not found in TA-Lib — skipping", indicator_str,
+            )
+            return None
         return {"indicator": indicator_str}
     return None
 

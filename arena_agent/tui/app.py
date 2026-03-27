@@ -9,14 +9,10 @@ from textual.widgets import Footer, Header, Static
 from arena_agent.tui.controller import ArenaMonitorController
 from arena_agent.tui.datasource import RuntimeStreamDataSource
 from arena_agent.tui.panels.account_panel import AccountPanel
-from arena_agent.tui.panels.decision_panel import DecisionPanel
 from arena_agent.tui.panels.features_panel import FeaturesPanel
-from arena_agent.tui.panels.health_panel import HealthPanel
-from arena_agent.tui.panels.logs_panel import LogsPanel
+from arena_agent.tui.panels.indicators_panel import IndicatorsPanel
 from arena_agent.tui.panels.loop_status_panel import LoopStatusPanel
 from arena_agent.tui.panels.market_panel import MarketPanel
-from arena_agent.tui.panels.policy_panel import PolicyPanel
-from arena_agent.tui.panels.setup_panel import SetupPanel
 from arena_agent.tui.panels.transition_panel import TransitionPanel
 
 
@@ -48,6 +44,7 @@ class ArenaMonitorApp(App):
 
     #top-row > * {
         width: 1fr;
+        min-width: 30;
     }
 
     .full-row {
@@ -78,13 +75,9 @@ class ArenaMonitorApp(App):
             with Horizontal(id="top-row"):
                 yield MarketPanel(id="market-panel")
                 yield AccountPanel(id="account-panel")
-                yield HealthPanel(id="health-panel")
-            yield PolicyPanel(id="policy-panel", classes="full-row")
             yield FeaturesPanel(id="features-panel", classes="full-row")
-            yield DecisionPanel(id="decision-panel", classes="full-row")
-            yield SetupPanel(id="setup-panel", classes="full-row")
+            yield IndicatorsPanel(id="indicators-panel", classes="full-row")
             yield TransitionPanel(id="transition-panel", classes="full-row")
-            yield LogsPanel(id="logs-panel", classes="full-row")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -104,10 +97,6 @@ class ArenaMonitorApp(App):
         self.query_one("#status-line", Static).update(self.controller.status_line())
         self.query_one(MarketPanel).refresh_view(self.controller)
         self.query_one(AccountPanel).refresh_view(self.controller)
-        self.query_one(HealthPanel).refresh_view(self.controller)
-        self.query_one(PolicyPanel).refresh_view(self.controller)
         self.query_one(FeaturesPanel).refresh_view(self.controller)
-        self.query_one(DecisionPanel).refresh_view(self.controller)
-        self.query_one(SetupPanel).refresh_view(self.controller)
+        self.query_one(IndicatorsPanel).refresh_view(self.controller)
         self.query_one(TransitionPanel).refresh_view(self.controller)
-        self.query_one(LogsPanel).refresh_view(self.controller)

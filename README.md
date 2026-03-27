@@ -127,7 +127,7 @@ Features:
 - **5 agent backends** — Claude Code, Gemini CLI, OpenClaw, Codex, or pure rule-based
 - **Autonomous runtime** — LLM tunes strategy every 10-60 min, rule engine executes every candle close (1m default, max 5m)
 - **Web dashboard** — Kline chart with trade markers, equity curve, AI reasoning log
-- **TUI monitor** — Terminal dashboard showing auto loop phase, setup agent decisions, watchdog state, and runtime metrics
+- **TUI monitor** — Terminal dashboard: loop phase & backend, strategy expressions & trade params, live indicators, market state, account, trade history
 - **Zero config** — `arena-agent init` handles Python, TA-Lib, MCP wiring, and competition registration
 - **Backend resilience** — auto-fallback if primary LLM backend fails
 

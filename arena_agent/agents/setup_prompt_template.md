@@ -41,9 +41,22 @@ policy_params must contain:
 - "exit": expression string — when True and position open, closes it
 
 Available variables in expressions:
-- Any subscribed indicator: `rsi_14`, `sma_20`, `sma_50`, `macd_hist`, `macd_signal`, `bbands_upper`, `bbands_lower`, `atr_14`, `cci_20`, `obv`, `adx_14`, etc.
 - Market data: `close`, `high`, `low`, `open`, `volume`
+- Any subscribed indicator (lowercase with period suffix): `rsi_14`, `sma_20`, `ema_12`, `macd_hist`, `macd_signal`, `bbands_upper`, `bbands_lower`, `atr_14`, `adx_14`, `cci_14`, `obv`, etc.
 - Operators: `<`, `>`, `<=`, `>=`, `==`, `!=`, `and`, `or`, `not`, `+`, `-`, `*`, `/`
+- You can use arithmetic on indicators: `(sma_20 - sma_50)`, `atr_14 * 2`, `(close - sma_20) / atr_14`
+
+## Available TA-Lib Indicators
+
+You MUST only use indicators from this list. Use NAME_PERIOD format (e.g. `RSI_14`, `SMA_50`) or just NAME for indicators with no period parameter (e.g. `MACD`, `OBV`).
+
+**Momentum**: ADX, ADXR, APO, AROON, AROONOSC, BOP, CCI, CMO, DX, MACD, MACDEXT, MACDFIX, MFI, MINUS_DI, MINUS_DM, MOM, PLUS_DI, PLUS_DM, PPO, ROC, ROCP, ROCR, ROCR100, RSI, STOCH, STOCHF, STOCHRSI, TRIX, ULTOSC, WILLR
+**Overlap/Trend**: BBANDS, DEMA, EMA, HT_TRENDLINE, KAMA, MA, MAMA, MIDPOINT, MIDPRICE, SAR, SAREXT, SMA, T3, TEMA, TRIMA, WMA
+**Volatility**: ATR, NATR, TRANGE
+**Volume**: AD, ADOSC, OBV
+**Statistics**: BETA, CORREL, LINEARREG, LINEARREG_ANGLE, LINEARREG_INTERCEPT, LINEARREG_SLOPE, STDDEV, TSF, VAR
+**Cycle**: HT_DCPERIOD, HT_DCPHASE, HT_PHASOR, HT_SINE, HT_TRENDMODE
+**Price**: AVGPRICE, MEDPRICE, TYPPRICE, WCLPRICE
 
 IMPORTANT — Expressions are validated via safe AST parsing. Do NOT use:
 - Function calls: `abs(x)`, `max(x,y)`, `min(x,y)` — NOT allowed
@@ -86,6 +99,7 @@ Trade direction (long/short) is decided by your expressions — design entry_lon
 - Wider TP/SL (tp_pct 1.0-3.0) for trending markets, tighter (0.3-0.8) for ranging.
 - **SIZING**: This is a competition — you need large PnL swings to win. Default to sizing_fraction 60-80. Go 80-100 (full size) when conviction is strong. Only go below 40 when truly uncertain. Small positions cannot overcome fees and will never reach the top of the leaderboard. The winners go big.
 - **FEE AWARENESS**: Each round-trip costs ~0.1% in fees (0.05% per side). If market volatility is low (volatility_pct < 0.3), either widen your TP to >1.5% so gross PnL exceeds fees, or reduce trade frequency. Frequent small trades in a low-vol market is a guaranteed loss — fees eat all the profit.
+- **TP/SL MINIMUMS**: tp_pct and sl_pct are percentages (e.g. 1.5 means 1.5%). Never set tp_pct below 1.0 — after fees (~0.1% round-trip), a TP under 1% yields nearly zero or negative net profit. Recommended: tp_pct 1.5-3.0 for trending, 1.0-1.5 for ranging. sl_pct should be at least 0.5 to avoid noise-triggered stops. If your win rate is ~50%, you need tp_pct > sl_pct to be profitable after fees.
 - Only change the policy TYPE when the current one is clearly failing. Tweaking TP/SL/sizing alone does NOT require an "update" — the current values persist across "hold" decisions.
 - **INACTIVITY ALERT**: If `inactivity_alert` appears in the context, your current strategy has produced no trades for an extended period. Consider whether the current policy fits the market conditions — you may need different parameters, a different strategy type, or tighter entry thresholds to generate signals.
 - **COOLDOWN**: If `current_strategy.cooldown.active` is `true`, you MUST return `"action": "hold"`. Do NOT propose an update — it will be rejected server-side. Check `cooldown.active` BEFORE deciding your action. You can still include `"cooldown_seconds"` in a hold response to adjust the period for next time. Because of the cooldown period (default 20 min), every strategy change is a commitment — you will be locked into it. Think carefully before proposing an update: is this strategy well-reasoned for the current market regime, or are you just reacting? A bad strategy change wastes 20+ minutes.

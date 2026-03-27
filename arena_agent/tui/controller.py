@@ -130,6 +130,33 @@ class ArenaMonitorController:
         logs = list(self._snapshot.get("logs", []))
         return list(reversed(logs[-limit:]))
 
+    def expression_rules(self) -> dict[str, str]:
+        """Return the active entry/exit expressions from runtime config."""
+        config = self._snapshot.get("runtime_config", {})
+        policy = config.get("policy", {}) if isinstance(config.get("policy"), dict) else {}
+        params = policy.get("params", {}) if isinstance(policy.get("params"), dict) else {}
+        rules: dict[str, str] = {}
+        for key in ("entry_long", "entry_short", "exit"):
+            if key in params and params[key]:
+                rules[key] = str(params[key])
+        return rules
+
+    def trade_params(self) -> dict[str, Any]:
+        """Return sizing, TP/SL, and risk config from runtime config."""
+        config = self._snapshot.get("runtime_config", {})
+        strategy = config.get("strategy", {}) if isinstance(config.get("strategy"), dict) else {}
+        sizing = strategy.get("sizing", {}) if isinstance(strategy.get("sizing"), dict) else {}
+        tpsl = strategy.get("tpsl", {}) if isinstance(strategy.get("tpsl"), dict) else {}
+        risk = config.get("risk_limits", {}) if isinstance(config.get("risk_limits"), dict) else {}
+        return {
+            "sizing_type": sizing.get("type"),
+            "fraction": sizing.get("fraction"),
+            "tp_pct": tpsl.get("tp_pct"),
+            "sl_pct": tpsl.get("sl_pct"),
+            "tpsl_type": tpsl.get("type"),
+            "max_position_size_pct": risk.get("max_position_size_pct"),
+        }
+
     def policy_info(self) -> dict[str, Any]:
         runtime = self._snapshot.get("runtime", {})
         config = self._snapshot.get("runtime_config", {})
