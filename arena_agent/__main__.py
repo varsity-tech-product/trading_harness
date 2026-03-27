@@ -462,20 +462,53 @@ def _run_auto(argv: list[str]) -> None:
         except Exception as exc:
             log.warning("Competition status check failed: %s — continuing", exc)
 
-        # --- Auto-register for any open competitions ---
+        # --- Auto-register for open competitions + track announced ones ---
         monitor.update_auto_loop({"phase": "registering", "phase_started_at": time.time()})
         if not args.no_auto_register:
             try:
-                open_comps = varsity_tools.get_competitions(status="registration_open")
-                open_list = open_comps.get("list", []) if isinstance(open_comps, dict) else []
                 my_regs = varsity_tools.get_my_registrations()
                 registered_ids = set()
                 if isinstance(my_regs, list):
                     registered_ids = {r.get("competitionId") for r in my_regs}
-                for comp in open_list:
-                    comp_id = comp.get("id")
-                    slug = comp.get("slug")
-                    if comp_id and slug and comp_id not in registered_ids:
+
+                # Check both registration_open AND announced competitions
+                for status in ("registration_open", "announced"):
+                    comps = varsity_tools.get_competitions(status=status)
+                    comp_list = comps.get("list", []) if isinstance(comps, dict) else []
+                    for comp in comp_list:
+                        comp_id = comp.get("id")
+                        slug = comp.get("slug")
+                        if not comp_id or not slug or comp_id in registered_ids:
+                            continue
+                        if status == "announced":
+                            # Track when registration opens so we don't miss the window
+                            reg_open = comp.get("registrationOpenTime") or comp.get("startTime")
+                            if isinstance(reg_open, (int, float)) and reg_open > 0:
+                                seconds_until_open = (reg_open / 1000.0) - time.time()
+                                if seconds_until_open > 0:
+                                    log.info(
+                                        "Upcoming competition: %s (slug=%s, registration opens in %.0f min)",
+                                        comp.get("title"), slug, seconds_until_open / 60,
+                                    )
+                                    # If registration opens within 10 min, shorten the next
+                                    # cycle so we catch the window (could be only 30 min).
+                                    if seconds_until_open < 600 and not hasattr(args, "_reg_watch_slug"):
+                                        args._reg_watch_slug = slug
+                                        args._reg_watch_time = reg_open / 1000.0
+                                        log.info(
+                                            "Registration watch: will check every 60s until %s opens",
+                                            slug,
+                                        )
+                            monitor.update_auto_loop({
+                                "upcoming_competition": {
+                                    "id": comp_id,
+                                    "slug": slug,
+                                    "title": comp.get("title"),
+                                    "registration_opens": reg_open,
+                                },
+                            })
+                            continue
+                        # registration_open — apply immediately
                         try:
                             result = varsity_tools.register_competition(slug)
                             log.info("Auto-registered for competition: %s (slug=%s) result=%s", comp.get("title"), slug, result)
@@ -619,6 +652,20 @@ def _run_auto(argv: list[str]) -> None:
                 consecutive_setup_failures += 1
                 setup_failed = True
                 next_check = args.setup_interval
+
+            # --- Shorten cycle if registration window is approaching ---
+            if hasattr(args, "_reg_watch_time"):
+                seconds_until = args._reg_watch_time - time.time()
+                if seconds_until <= 0:
+                    # Registration should be open now — next cycle will catch it
+                    log.info("Registration watch: window should be open now for %s", getattr(args, "_reg_watch_slug", "?"))
+                    next_check = 60  # check again in 60s
+                    delattr(args, "_reg_watch_time")
+                    delattr(args, "_reg_watch_slug")
+                elif seconds_until < next_check:
+                    # Wake up right when registration opens
+                    next_check = max(30, int(seconds_until) + 5)
+                    log.info("Registration watch: shortened cycle to %ds (opens in %.0fs)", next_check, seconds_until)
 
             # --- Fallback strategy: apply if LLM is consistently unavailable ---
             if consecutive_setup_failures >= max_setup_failures:
