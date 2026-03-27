@@ -1,6 +1,6 @@
 {
   "name": "@varsity-arena/agent",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A trading harness for AI agents — 42 MCP tools, 158 indicators, autonomous trading runtime",
   "repository": {
     "type": "git",
