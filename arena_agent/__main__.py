@@ -168,6 +168,15 @@ def _deep_merge(base: dict, overrides: dict, path: tuple[str, ...] = ()) -> dict
     return base
 
 
+def _interruptible_sleep(seconds: float, should_stop) -> None:
+    """Sleep in 2-second chunks, checking should_stop() between each."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if callable(should_stop) and should_stop():
+            return
+        time.sleep(min(2.0, max(0, deadline - time.time())))
+
+
 def _execute_discretionary_trade(
     trade,
     config_dict: dict[str, Any],
@@ -256,7 +265,16 @@ def _execute_discretionary_trade(
         )
 
         result = executor.execute(action, state_before)
-        state_after = state_builder.build()
+
+        # Build post-trade state for transition logging.
+        # Only re-fetch account/position — reuse market data from state_before
+        # to avoid 4 unnecessary API calls (klines, orderbook, market_info, competition).
+        try:
+            state_after = state_builder.build()
+        except Exception:
+            # If post-trade state fetch fails (e.g. rate limit), use state_before
+            # as fallback — the trade itself already executed.
+            state_after = state_before
         transition = build_transition_event(state_before, action, result, state_after)
         transition_store.append(transition)
 
@@ -479,7 +497,7 @@ def _run_auto(argv: list[str]) -> None:
                     )
                     break
                 log.warning("Engine account not found (attempt %d/3) — retrying next cycle.", consecutive_account_failures)
-                time.sleep(error_backoff)
+                _interruptible_sleep(error_backoff, lambda: stop_requested)
                 continue
             else:
                 consecutive_account_failures = 0
@@ -637,7 +655,7 @@ def _run_auto(argv: list[str]) -> None:
                     "next_setup_check_seconds": next_check,
                     "mode": "discretionary",
                 })
-                time.sleep(next_check)
+                _interruptible_sleep(next_check, lambda: stop_requested)
 
             else:
                 # ── Rule-based mode: run the expression engine ──
@@ -751,10 +769,10 @@ def _run_auto(argv: list[str]) -> None:
                     wait = min(args.setup_interval, 60)
                     log.warning("Runtime finished in ≤1 iteration — waiting %ds before next cycle.", wait)
                     monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
-                    time.sleep(wait)
+                    _interruptible_sleep(wait, lambda: stop_requested)
                 else:
                     monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
-                    time.sleep(2)
+                    _interruptible_sleep(2, lambda: stop_requested)
 
         except Exception as exc:
             # --- Self-healing: never exit during a live competition ---
@@ -764,7 +782,7 @@ def _run_auto(argv: list[str]) -> None:
                 "phase_started_at": time.time(),
                 "error_backoff_seconds": error_backoff,
             })
-            time.sleep(error_backoff)
+            _interruptible_sleep(error_backoff, lambda: stop_requested)
             error_backoff = min(error_backoff * 2, max_error_backoff)
             continue
 
