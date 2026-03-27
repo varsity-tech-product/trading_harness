@@ -6,7 +6,7 @@ import logging
 import signal
 import time
 
-from arena_agent.agents.rule_agent import build_policy
+from arena_agent.agents.policy_factory import build_policy
 from arena_agent.interfaces.action_schema import Action
 from arena_agent.core.environment_adapter import EnvironmentAdapter
 from arena_agent.core.models import RuntimeConfig, RuntimeReport, TransitionEvent, TransitionMetrics

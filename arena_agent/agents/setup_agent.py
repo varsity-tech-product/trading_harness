@@ -213,16 +213,37 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
 
 
 @dataclass
+class TradeDecision:
+    """A discretionary trade action from the setup agent."""
+    type: str          # OPEN_LONG, OPEN_SHORT, CLOSE_POSITION, UPDATE_TPSL, HOLD
+    tp_pct: float | None = None       # take profit %
+    sl_pct: float | None = None       # stop loss %
+    sizing_fraction: float | None = None  # % of equity
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"type": self.type}
+        if self.tp_pct is not None:
+            d["tp_pct"] = self.tp_pct
+        if self.sl_pct is not None:
+            d["sl_pct"] = self.sl_pct
+        if self.sizing_fraction is not None:
+            d["sizing_fraction"] = self.sizing_fraction
+        return d
+
+
+@dataclass
 class SetupDecision:
-    action: str  # "update" or "hold"
+    action: str  # "update", "hold", or "trade"
     overrides: dict[str, Any] | None
     reason: str
     restart_runtime: bool
     next_check_seconds: int | None = None  # LLM-controlled poll interval
     chat_message: str | None = None  # optional message to competition chat
+    trade: TradeDecision | None = None  # discretionary trade action
+    mode: str | None = None  # "rule_based" or "discretionary"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "action": self.action,
             "overrides": self.overrides,
             "reason": self.reason,
@@ -230,6 +251,11 @@ class SetupDecision:
             "next_check_seconds": self.next_check_seconds,
             "chat_message": self.chat_message,
         }
+        if self.trade is not None:
+            d["trade"] = self.trade.to_dict()
+        if self.mode is not None:
+            d["mode"] = self.mode
+        return d
 
 
 def _get_valid_talib_names() -> set[str]:
@@ -693,11 +719,35 @@ class SetupAgent:
         logger.info("setup_agent decision: %s", json.dumps(payload, default=str)[:1000])
         return payload
 
+    @staticmethod
+    def _detect_openclaw_agent() -> str:
+        """Auto-detect the best openclaw agent from the user's existing config.
+
+        Reads ``~/.openclaw/openclaw.json`` (never modifies it) and looks for
+        arena-specific agents that already have a model configured.  Falls back
+        to ``main`` if nothing better is found.
+        """
+        config_path = Path.home() / ".openclaw" / "openclaw.json"
+        if not config_path.exists():
+            return "main"
+        try:
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return "main"
+        agents = cfg.get("agents", {}).get("list", [])
+        # Prefer arena-specific agents that have a model configured
+        for preferred in ("arena-setup", "arena-trader"):
+            for agent in agents:
+                if agent.get("id") == preferred and agent.get("model"):
+                    logger.info("openclaw auto-detected agent '%s' (model=%s)", preferred, agent["model"])
+                    return preferred
+        return "main"
+
     def _run_openclaw(self, prompt: str) -> dict[str, Any]:
         # Use whichever openclaw agent the user configured.
-        # Defaults to "main" — override via openclaw_agent_id in config.
+        # Defaults to auto-detected arena agent, or "main".
         from arena_agent.agents.cli_backends import _clear_openclaw_sessions
-        agent_id = self.openclaw_agent_id or "main"
+        agent_id = self.openclaw_agent_id or self._detect_openclaw_agent()
         _clear_openclaw_sessions(agent_id)
         command = [
             "openclaw",
@@ -847,7 +897,7 @@ class SetupAgent:
     @staticmethod
     def _parse_decision(payload: dict[str, Any]) -> SetupDecision:
         action = str(payload.get("action", "hold")).lower()
-        if action not in ("update", "hold"):
+        if action not in ("update", "hold", "trade"):
             action = "hold"
         # Parse next_check_seconds, clamp to 60-3600
         next_check = payload.get("next_check_seconds")
@@ -859,6 +909,42 @@ class SetupAgent:
         chat_msg = payload.get("chat_message")
         if chat_msg is not None:
             chat_msg = str(chat_msg).strip() or None
+
+        # Parse mode switch
+        mode = payload.get("mode")
+        if mode is not None:
+            mode = str(mode).lower()
+            if mode not in ("rule_based", "discretionary"):
+                mode = None
+
+        # Parse discretionary trade
+        trade = None
+        trade_raw = payload.get("trade")
+        if action == "trade" and isinstance(trade_raw, dict):
+            trade_type = str(trade_raw.get("type", "HOLD")).upper()
+            if trade_type not in ("OPEN_LONG", "OPEN_SHORT", "CLOSE_POSITION", "UPDATE_TPSL", "HOLD"):
+                trade_type = "HOLD"
+            tp_pct = trade_raw.get("tp_pct")
+            sl_pct = trade_raw.get("sl_pct")
+            sizing_fraction = trade_raw.get("sizing_fraction")
+            if tp_pct is not None:
+                tp_pct = max(0.1, min(5.0, float(tp_pct)))
+            if sl_pct is not None:
+                sl_pct = max(0.1, min(3.0, float(sl_pct)))
+            if sizing_fraction is not None:
+                sizing_fraction = max(1, min(100, float(sizing_fraction)))
+            trade = TradeDecision(
+                type=trade_type,
+                tp_pct=tp_pct,
+                sl_pct=sl_pct,
+                sizing_fraction=sizing_fraction,
+            )
+            logger.info("_parse_decision: discretionary trade type=%s tp=%.2s sl=%.2s size=%.2s",
+                        trade_type, tp_pct, sl_pct, sizing_fraction)
+        elif action == "trade" and trade_raw is None:
+            # Agent said "trade" but didn't provide trade object — demote to hold
+            logger.warning("_parse_decision: action=trade but no trade object — demoting to hold")
+            action = "hold"
 
         # Detect flat vs legacy format:
         # If the payload contains "policy" (a string), use the new flat path.
@@ -888,6 +974,8 @@ class SetupAgent:
             restart_runtime=restart,
             next_check_seconds=next_check,
             chat_message=chat_msg,
+            trade=trade,
+            mode=mode,
         )
 
 

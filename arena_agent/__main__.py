@@ -51,7 +51,7 @@ def _run_runtime(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(description="Run an Arena trading agent runtime.")
     parser.add_argument(
         "--agent",
-        choices=["config", "rule", "tap"],
+        choices=["config", "tap"],
         default="config",
         help="Policy to run. 'config' keeps the YAML policy unchanged. "
         "'rule' uses the built-in rule policy. 'tap' uses an external HTTP endpoint. "
@@ -125,7 +125,7 @@ def _run_runtime(argv: list[str]) -> None:
 
 def _apply_agent_override(config, args: Any):
     agent = str(getattr(args, "agent", "config")).lower()
-    if agent in {"config", "rule"}:
+    if agent == "config":
         return config
     if agent == "tap":
         policy = dict(config.policy)
@@ -166,6 +166,115 @@ def _deep_merge(base: dict, overrides: dict, path: tuple[str, ...] = ()) -> dict
         else:
             base[key] = copy.deepcopy(value)
     return base
+
+
+def _execute_discretionary_trade(
+    trade,
+    config_dict: dict[str, Any],
+    dry_run: bool,
+    log: logging.Logger,
+) -> dict[str, Any] | None:
+    """Execute a discretionary trade directly — no runtime loop.
+
+    Builds executor and state from the live config_dict, computes TP/SL
+    and sizing from percentages, then sends the order to the arena API.
+
+    Returns the execution result dict, or None on failure.
+    """
+    from arena_agent.core.environment_adapter import EnvironmentAdapter
+    from arena_agent.core.state_builder import StateBuilder
+    from arena_agent.core.runtime_loop import build_transition_event
+    from arena_agent.execution.order_executor import OrderExecutor
+    from arena_agent.interfaces.action_schema import Action, ActionType
+    from arena_agent.memory.transition_store import TransitionStore
+
+    trade_type = trade.type
+    if trade_type == "HOLD":
+        log.info("Discretionary trade: HOLD — no action")
+        return None
+
+    try:
+        # Build components from the live config_dict
+        runtime_config = RuntimeConfig.from_mapping(config_dict)
+        adapter = EnvironmentAdapter(
+            retry_attempts=runtime_config.adapter_retry_attempts,
+            retry_backoff_seconds=runtime_config.adapter_retry_backoff_seconds,
+            min_call_spacing_seconds=runtime_config.adapter_min_call_spacing_seconds,
+        )
+        state_builder = StateBuilder(adapter, runtime_config)
+        executor = OrderExecutor(
+            adapter,
+            competition_id=runtime_config.competition_id,
+            risk_limits=runtime_config.risk_limits,
+            dry_run=dry_run,
+        )
+        transition_store = TransitionStore(
+            maxlen=runtime_config.storage.max_in_memory_transitions,
+            output_path=runtime_config.storage.transition_path,
+        )
+
+        state_before = state_builder.build()
+        current_price = state_before.market.last_price
+        equity = state_before.account.equity
+
+        # --- Determine direction for TP/SL computation ---
+        if trade_type in ("OPEN_LONG", "OPEN_SHORT"):
+            is_long = trade_type == "OPEN_LONG"
+        elif trade_type == "UPDATE_TPSL" and state_before.position:
+            is_long = state_before.position.direction == "long"
+        else:
+            is_long = True  # fallback
+
+        # --- Compute TP/SL from percentages ---
+        tp_price = None
+        sl_price = None
+        if trade.tp_pct is not None and current_price:
+            pct = trade.tp_pct / 100.0
+            tp_price = current_price * (1 + pct) if is_long else current_price * (1 - pct)
+
+        if trade.sl_pct is not None and current_price:
+            pct = trade.sl_pct / 100.0
+            sl_price = current_price * (1 - pct) if is_long else current_price * (1 + pct)
+
+        # --- Compute size from sizing_fraction ---
+        size = None
+        if trade.sizing_fraction is not None and equity and current_price:
+            fraction = trade.sizing_fraction / 100.0
+            size = (equity * fraction) / current_price
+
+        action = Action(
+            type=ActionType(trade_type),
+            size=size,
+            take_profit=tp_price,
+            stop_loss=sl_price,
+            metadata={"source": "discretionary"},
+        )
+
+        log.info(
+            "Discretionary trade: %s size=%s tp=%s sl=%s (price=%.2f equity=%.2f)",
+            trade_type, size, tp_price, sl_price, current_price or 0, equity or 0,
+        )
+
+        result = executor.execute(action, state_before)
+        state_after = state_builder.build()
+        transition = build_transition_event(state_before, action, result, state_after)
+        transition_store.append(transition)
+
+        log.info(
+            "Discretionary trade result: accepted=%s executed=%s pnl=%.4f fee=%.4f msg=%s",
+            result.accepted, result.executed, result.realized_pnl, result.fee,
+            result.message,
+        )
+        return {
+            "accepted": result.accepted,
+            "executed": result.executed,
+            "realized_pnl": result.realized_pnl,
+            "fee": result.fee,
+            "message": result.message,
+        }
+    except Exception as exc:
+        log.error("Discretionary trade failed: %s", exc, exc_info=True)
+        return None
 
 
 def _run_auto(argv: list[str]) -> None:
@@ -214,6 +323,8 @@ def _run_auto(argv: list[str]) -> None:
     # Ensure a valid default policy type if YAML doesn't specify one
     policy.setdefault("type", "expression")
     policy.setdefault("params", {})
+    # Trading mode: rule_based (default) or discretionary
+    config_dict.setdefault("mode", "rule_based")
 
     stop_requested = False
 
@@ -425,6 +536,28 @@ def _run_auto(argv: list[str]) -> None:
                 else:
                     consecutive_setup_failures = 0
 
+                # --- Handle mode switching ---
+                if decision.mode and decision.mode != config_dict.get("mode", "rule_based"):
+                    log.info("Mode changed: %s -> %s", config_dict.get("mode", "rule_based"), decision.mode)
+                    config_dict["mode"] = decision.mode
+                    monitor.update_auto_loop({"mode": decision.mode})
+
+                # --- Execute discretionary trade ---
+                if decision.action == "trade" and decision.trade:
+                    trade_result = _execute_discretionary_trade(
+                        decision.trade, config_dict, args.dry_run, log,
+                    )
+                    monitor.update_auto_loop({
+                        "last_discretionary_trade": {
+                            "type": decision.trade.type,
+                            "result": trade_result,
+                            "timestamp": time.time(),
+                        },
+                    })
+                    if trade_result and trade_result.get("executed"):
+                        inactive_cycles = 0
+                        inactive_since = None
+
                 if decision.action == "update" and decision.overrides:
                     log.info("Applying overrides: %s", json.dumps(decision.overrides, default=str)[:2000])
                     new_policy = decision.overrides.get("policy", {})
@@ -458,7 +591,9 @@ def _run_auto(argv: list[str]) -> None:
                         log.info("Chat sent: %s", decision.chat_message[:100])
                     except Exception as exc:
                         log.warning("Failed to send chat: %s", exc)
-                min_next_check = 600  # 10 min floor — prevent rapid-fire LLM calls
+                # In discretionary mode, allow shorter intervals (60s floor)
+                current_mode = config_dict.get("mode", "rule_based")
+                min_next_check = 60 if current_mode == "discretionary" else 600
                 next_check = max(decision.next_check_seconds or args.setup_interval, min_next_check)
                 config_dict["_last_next_check_seconds"] = next_check
             except Exception as exc:
@@ -486,60 +621,80 @@ def _run_auto(argv: list[str]) -> None:
                 break
 
             # --- Runtime phase ---
-            tick = float(config_dict.get("tick_interval_seconds", 60))
-            iterations = max(1, int(next_check / tick))
-            config_dict["max_iterations"] = iterations
-            log.info("Starting runtime: %d iterations (%.0fs tick, next setup in ~%ds)", iterations, tick, next_check)
-            monitor.update_auto_loop({
-                "phase": "runtime",
-                "phase_started_at": time.time(),
-                "next_setup_check_seconds": next_check,
-            })
+            current_mode = config_dict.get("mode", "rule_based")
+            runtime = None
+            report = None
 
-            try:
-                runtime_config = RuntimeConfig.from_mapping(config_dict)
-                runtime = MarketRuntime(runtime_config, monitor=monitor)
-                report = runtime.run()
-                log.info(
-                    "Runtime cycle %d done | iters=%s executed=%s pnl=%.4f equity=%s",
-                    cycle, report.iterations, report.executed_actions,
-                    report.total_realized_pnl, report.final_equity,
-                )
-            except (ValueError, TypeError) as exc:
-                log.warning("Runtime config error: %s — dropping strategy overrides", exc)
-                config_dict.pop("strategy", None)
+            if current_mode == "discretionary":
+                # ── Discretionary mode: no runtime loop ──
+                # The setup agent already executed the trade directly.
+                # TP/SL is enforced server-side on the order.
+                # Just wait for the next setup cycle.
+                log.info("Discretionary mode: skipping runtime loop (next setup in ~%ds)", next_check)
+                monitor.update_auto_loop({
+                    "phase": "discretionary_wait",
+                    "phase_started_at": time.time(),
+                    "next_setup_check_seconds": next_check,
+                    "mode": "discretionary",
+                })
+                time.sleep(next_check)
+
+            else:
+                # ── Rule-based mode: run the expression engine ──
+                tick = float(config_dict.get("tick_interval_seconds", 60))
+                iterations = max(1, int(next_check / tick))
+                config_dict["max_iterations"] = iterations
+
+                log.info("Starting runtime: %d iterations (%.0fs tick, next setup in ~%ds)", iterations, tick, next_check)
+                monitor.update_auto_loop({
+                    "phase": "runtime",
+                    "phase_started_at": time.time(),
+                    "next_setup_check_seconds": next_check,
+                    "mode": "rule_based",
+                })
+
                 try:
                     runtime_config = RuntimeConfig.from_mapping(config_dict)
                     runtime = MarketRuntime(runtime_config, monitor=monitor)
                     report = runtime.run()
                     log.info(
-                        "Runtime cycle %d done (fallback) | iters=%s executed=%s pnl=%.4f equity=%s",
+                        "Runtime cycle %d done | iters=%s executed=%s pnl=%.4f equity=%s",
                         cycle, report.iterations, report.executed_actions,
                         report.total_realized_pnl, report.final_equity,
                     )
-                except Exception as inner_exc:
-                    log.error("Runtime crashed even after fallback: %s", inner_exc, exc_info=True)
-                    report = None
-            except Exception as exc:
-                log.error("Runtime crashed: %s", exc, exc_info=True)
-                report = None
+                except (ValueError, TypeError) as exc:
+                    log.warning("Runtime config error: %s — dropping strategy overrides", exc)
+                    config_dict.pop("strategy", None)
+                    try:
+                        runtime_config = RuntimeConfig.from_mapping(config_dict)
+                        runtime = MarketRuntime(runtime_config, monitor=monitor)
+                        report = runtime.run()
+                        log.info(
+                            "Runtime cycle %d done (fallback) | iters=%s executed=%s pnl=%.4f equity=%s",
+                            cycle, report.iterations, report.executed_actions,
+                            report.total_realized_pnl, report.final_equity,
+                        )
+                    except Exception as inner_exc:
+                        log.error("Runtime crashed even after fallback: %s", inner_exc, exc_info=True)
+                except Exception as exc:
+                    log.error("Runtime crashed: %s", exc, exc_info=True)
 
-            # --- Feed runtime state back to config for next setup cycle ---
-            config_dict.pop("_expression_errors", None)
-            config_dict.pop("_last_indicator_values", None)
-            if runtime is not None:
-                # Expression validation errors → LLM can fix them next cycle
-                policy = getattr(runtime, "policy", None)
-                expr_errors = getattr(policy, "_validation_errors", None)
-                if expr_errors:
-                    config_dict["_expression_errors"] = [
-                        {"expression": k, "error": v} for k, v in expr_errors.items()
-                    ]
-                # Last indicator values → LLM can calibrate thresholds
-                sb = getattr(runtime, "state_builder", None)
-                last_signal = getattr(sb, "_last_signal_values", None)
-                if isinstance(last_signal, dict) and last_signal:
-                    config_dict["_last_indicator_values"] = last_signal
+                # --- Feed runtime state back to config for next setup cycle ---
+                config_dict.pop("_expression_errors", None)
+                config_dict.pop("_last_indicator_values", None)
+                if runtime is not None:
+                    # Expression validation errors → LLM can fix them next cycle
+                    policy_obj = getattr(runtime, "policy", None)
+                    expr_errors = getattr(policy_obj, "_validation_errors", None)
+                    if expr_errors:
+                        config_dict["_expression_errors"] = [
+                            {"expression": k, "error": v} for k, v in expr_errors.items()
+                        ]
+                    # Last indicator values → LLM can calibrate thresholds
+                    sb = getattr(runtime, "state_builder", None)
+                    last_signal = getattr(sb, "_last_signal_values", None)
+                    if isinstance(last_signal, dict) and last_signal:
+                        config_dict["_last_indicator_values"] = last_signal
 
             # --- Inactivity watchdog ---
             if report is not None:
@@ -563,6 +718,12 @@ def _run_auto(argv: list[str]) -> None:
                 # successfully produces an "update" decision
 
             # --- Publish watchdog + runtime result to monitor ---
+            if current_mode == "discretionary":
+                stop_reason_label = "discretionary"
+            elif report is not None:
+                stop_reason_label = getattr(report, "stop_reason", None)
+            else:
+                stop_reason_label = "crashed"
             monitor.update_auto_loop({
                 "inactive_cycles": inactive_cycles,
                 "inactive_since": inactive_since,
@@ -571,9 +732,10 @@ def _run_auto(argv: list[str]) -> None:
                 "consecutive_setup_failures": consecutive_setup_failures,
                 "consecutive_account_failures": consecutive_account_failures,
                 "error_backoff_seconds": error_backoff,
-                "last_runtime_stop_reason": getattr(report, "stop_reason", None) if report else "crashed",
+                "last_runtime_stop_reason": stop_reason_label,
                 "last_runtime_iterations": report.iterations if report else None,
                 "last_runtime_executed": report.executed_actions if report else None,
+                "mode": current_mode,
             })
 
             if stop_requested:
@@ -581,17 +743,18 @@ def _run_auto(argv: list[str]) -> None:
 
             # Reset error backoff on successful cycle
             error_backoff = 5
-            # If runtime finished too quickly (e.g. crashed on first iteration),
-            # wait at least setup_interval before the next cycle to avoid
-            # rapid-fire LLM calls.
-            if report is None or report.iterations <= 1:
-                wait = min(args.setup_interval, 60)
-                log.warning("Runtime finished in ≤1 iteration — waiting %ds before next cycle.", wait)
-                monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
-                time.sleep(wait)
-            else:
-                monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
-                time.sleep(2)
+            # In discretionary mode we already waited during the sleep above.
+            # In rule-based mode, guard against rapid-fire LLM calls if
+            # runtime finished too quickly (e.g. crashed on first iteration).
+            if current_mode != "discretionary":
+                if report is None or report.iterations <= 1:
+                    wait = min(args.setup_interval, 60)
+                    log.warning("Runtime finished in ≤1 iteration — waiting %ds before next cycle.", wait)
+                    monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
+                    time.sleep(wait)
+                else:
+                    monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
+                    time.sleep(2)
 
         except Exception as exc:
             # --- Self-healing: never exit during a live competition ---

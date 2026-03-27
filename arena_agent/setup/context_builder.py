@@ -39,6 +39,9 @@ def build_setup_context(
             ),
         }
 
+    # Trading mode: rule_based (default) or discretionary
+    context["mode"] = config.get("mode", "rule_based")
+
     symbol = config.get("symbol", "BTCUSDT")
     interval = config.get("interval", "1m")
 

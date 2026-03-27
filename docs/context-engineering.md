@@ -29,6 +29,7 @@ graph LR
 
 | Key | Source | What the LLM sees |
 |-----|--------|-------------------|
+| `mode` | Runtime config | Current trading mode: `rule_based` (default) or `discretionary` |
 | `market_summary` | 50 candles @ 1m | Price, SMA-20, trend (bullish/neutral/bearish), volatility %, recent change |
 | `market_5m`, `market_15m` | 50 candles @ 5m/15m | Multi-timeframe regime confirmation |
 | `account_state` | Live account API | Balance, equity, unrealized PnL, trade count |
@@ -98,12 +99,13 @@ The LLM always gets a response. Partial data is better than no data.
 
 The prompt template (`setup_prompt_template.md`) defines:
 
-1. **Role**: "You are a strategy manager. You configure a rule-based trading engine. You do NOT place trades directly."
+1. **Role**: "You are a strategy manager." Operates in two modes: rule-based (configure expressions) or discretionary (trade directly).
 2. **Context interpretation guide**: What each field means, which stats to trust
-3. **Output schema**: Flat JSON with `action`, `policy_params`, `tp_pct`, `sl_pct`, `sizing_fraction`
-4. **Expression DSL spec**: What variables and operators are allowed
-5. **Guidelines**: When to hold vs. update, sizing heuristics, inactivity handling
-6. **Tool catalog** (appended if tool proxy enabled): Available tools with signatures
+3. **Output schema**: Flat JSON with `action` (update/hold/trade), `mode`, `policy_params`, `trade`, `tp_pct`, `sl_pct`, `sizing_fraction`
+4. **Expression DSL spec**: What variables and operators are allowed (rule-based mode)
+5. **Discretionary trade spec**: Trade object with type, TP/SL percentages, sizing (discretionary mode)
+6. **Guidelines**: When to hold vs. update vs. trade, mode switching, sizing heuristics, inactivity handling
+7. **Tool catalog** (appended if tool proxy enabled): Available tools with signatures
 
 Key prompt design decisions:
 
@@ -114,8 +116,9 @@ Key prompt design decisions:
 
 ## Stage 3: Decision Parsing
 
-The LLM returns a flat JSON decision:
+The LLM returns a flat JSON decision. There are three action types:
 
+**Rule-based** — configure expressions (the engine trades automatically):
 ```json
 {
   "action": "update",
@@ -132,6 +135,28 @@ The LLM returns a flat JSON decision:
   "reason": "RSI + trend confirmation strategy"
 }
 ```
+
+**Discretionary** — trade directly (no expressions, no runtime loop):
+```json
+{
+  "action": "trade",
+  "trade": {
+    "type": "OPEN_SHORT",
+    "tp_pct": 1.5,
+    "sl_pct": 1.0,
+    "sizing_fraction": 80
+  },
+  "reason": "Bearish across all timeframes",
+  "next_check_seconds": 120
+}
+```
+
+**Hold** — no changes:
+```json
+{ "action": "hold", "reason": "Waiting for clearer signal" }
+```
+
+The agent can switch modes by including `"mode": "rule_based"` or `"mode": "discretionary"` in any response.
 
 The decision parser (`_translate_flat_decision`) converts this to nested runtime config:
 

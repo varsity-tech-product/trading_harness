@@ -188,7 +188,7 @@ Use `update_runtime_config` to select indicators or set `indicator_mode: "full"`
 ### Runtime Management
 - **arena.runtime_start** — Start the autonomous trading agent. Params:
   - `competition_id`: override config (so agent doesn't edit YAML)
-  - `agent`: `"auto"` (default), `"rule"`, `"claude"`, `"gemini"`, `"openclaw"`, `"codex"`, `"tap"`
+  - `agent`: `"auto"` (default), `"claude"`, `"gemini"`, `"openclaw"`, `"codex"`, `"config"`, `"tap"`
   - `model`: model override (e.g. `"sonnet"`)
   - `iterations`: max iterations (omit for unlimited)
   - `config`: path to YAML config (omit for default)
@@ -315,9 +315,64 @@ Methods: `volatility` (ATR-scaled — longer period in high vol) or `trend` (ADX
 
 Indicator values are returned in `market_state` → `signal_state.values` keyed by name + params (e.g., `sma_20`, `rsi_14`, `macd_12_26_9`).
 
-### Expression-based policies
+### Trading Modes
 
-All strategies use the expression engine. Define entry/exit signals as Python-like expressions:
+Arena supports two trading modes. The agent can switch between them mid-competition.
+
+**Rule-based** (default) — The setup agent writes expression-based entry/exit rules. The runtime evaluates them every candle close, executing trades automatically. Good for clear trends and repeatable patterns.
+
+**Discretionary** — The setup agent makes trading decisions directly — "open long", "close position", etc. No expressions, no runtime loop. The agent analyzes the market and executes at each setup cycle (every 1-5 min). Good for choppy markets or complex setups that can't be captured in simple expressions.
+
+Set the mode in the setup agent's JSON response:
+```json
+{ "mode": "discretionary" }
+{ "mode": "rule_based" }
+```
+
+Discretionary trade example:
+```json
+{
+  "action": "trade",
+  "mode": "discretionary",
+  "trade": {
+    "type": "OPEN_LONG",
+    "tp_pct": 1.5,
+    "sl_pct": 0.8,
+    "sizing_fraction": 80
+  },
+  "reason": "Breaking above resistance with volume",
+  "next_check_seconds": 120,
+  "chat_message": "Going long!"
+}
+```
+
+Switch back to rule-based:
+```json
+{
+  "action": "update",
+  "mode": "rule_based",
+  "policy_params": {
+    "entry_long": "rsi_14 < 30 and close > sma_50",
+    "entry_short": "rsi_14 > 70 and close < sma_50",
+    "exit": "rsi_14 > 55 or rsi_14 < 45"
+  },
+  "indicators": ["RSI_14", "SMA_50"],
+  "reason": "Clear trend, switching to automated signals"
+}
+```
+
+| | Rule-based | Discretionary |
+|---|---|---|
+| **Who trades** | Expression engine (every tick) | Setup agent (every cycle) |
+| **Cycle interval** | 10-60 min setup, 1m ticks | 1-5 min (agent-controlled) |
+| **Min interval** | 600s between LLM calls | 60s between LLM calls |
+| **Trade decisions** | Expressions fire automatically | Agent says open/close/hold |
+| **TP/SL** | Set in strategy config | Set per-trade + server-enforced |
+| **Best for** | Trends, patterns, high-frequency | Choppy markets, judgment calls |
+
+### Expression-based policies (rule-based mode)
+
+In rule-based mode, define entry/exit signals as Python-like expressions:
 
 ```json
 {
@@ -351,7 +406,7 @@ Ensemble (multiple expression sets, first non-HOLD signal wins):
 }
 ```
 
-Use `agent: "rule"` in `runtime_start` for expression policies without LLM setup agent.
+Use `agent: "config"` in `runtime_start` for expression policies without LLM setup agent.
 
 ### Position sizing
 

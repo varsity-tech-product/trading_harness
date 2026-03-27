@@ -256,7 +256,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
 
     # ── Setup Agent (LLM-powered strategy configuration) ───────────────
 
-    @mcp.tool(name="varsity.setup_decide", description="Run the LLM setup agent to decide config changes for a competition. Returns action (update/hold), overrides to apply, reason, and whether runtime needs restart.")
+    @mcp.tool(name="varsity.setup_decide", description="Run the LLM setup agent to decide config changes or execute discretionary trades. Returns action (update/hold/trade), overrides, trade details, mode (rule_based/discretionary), and reason.")
     def setup_decide(
         competition_id: int,
         backend: str = "auto",

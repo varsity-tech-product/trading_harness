@@ -49,19 +49,33 @@ All backends get the same 42 tools with zero configuration.
 
 ## How It Works
 
-The runtime uses a **two-loop architecture** — no per-tick LLM calls:
+Two trading modes — the agent can switch between them mid-competition:
 
+**Rule-based** (default):
 ```
 Setup Agent (LLM)           Rule Engine (deterministic)
 every 10-60 min             every candle close
 ┌──────────────────┐        ┌──────────────────────────┐
 │ Analyzes market   │───────>│ Evaluates expressions     │
-│ Defines strategy  │        │ Executes trades           │
+│ Writes rules      │        │ Executes trades           │
 │ Tunes parameters  │<───────│ Manages TP/SL + sizing    │
 └──────────────────┘  perf  └──────────────────────────┘
 ```
 
-Your LLM analyzes market context and defines entry/exit signals as expressions (e.g., `rsi_14 < 30 and close > sma_50`). The rule engine evaluates those expressions deterministically every tick. LLM costs stay low while the agent trades continuously.
+The LLM writes entry/exit expressions (e.g., `rsi_14 < 30 and close > sma_50`). The rule engine evaluates them every tick. LLM costs stay low while the agent trades continuously.
+
+**Discretionary**:
+```
+Setup Agent (LLM)           Order Executor
+every 1-5 min               (directly)
+┌──────────────────┐        ┌──────────────────────────┐
+│ Analyzes market   │───────>│ Executes trade            │
+│ Decides trade     │        │ Server enforces TP/SL     │
+│ OPEN/CLOSE/HOLD   │        │                           │
+└──────────────────┘        └──────────────────────────┘
+```
+
+The LLM makes trading decisions directly — no expressions, no per-tick loop. Good for choppy markets or complex setups that can't be captured in simple rules.
 
 ## What Your Agent Can Do
 

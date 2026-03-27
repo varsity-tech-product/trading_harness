@@ -2,11 +2,13 @@
 
 How Arena lets LLMs define trading signals as safe, deterministic expressions — no per-tick LLM calls.
 
+> **Note**: The expression engine powers **rule-based mode** (the default). In **discretionary mode**, the setup agent makes trading decisions directly — no expressions, no per-tick evaluation. See [context-engineering.md](context-engineering.md) for how discretionary mode works. The agent can switch between modes mid-competition.
+
 ## The Key Insight
 
 Most agent trading systems call the LLM on every tick to decide what to do. This is expensive, slow, and unreliable.
 
-Arena splits the problem:
+Arena's rule-based mode splits the problem:
 
 | Layer | Who | When | Cost |
 |-------|-----|------|------|
@@ -192,7 +194,7 @@ All components are pluggable and config-driven. The setup agent controls which c
 | File | Role |
 |------|------|
 | `arena_agent/agents/expression_policy.py` | AST validation, safe eval, decision logic |
-| `arena_agent/agents/rule_agent.py` | Policy factory, ensemble composition |
+| `arena_agent/agents/policy_factory.py` | Policy factory, ensemble composition |
 | `arena_agent/strategy/layer.py` | Refine signals → executable orders |
 | `arena_agent/strategy/builder.py` | Config → strategy components (85+ param aliases) |
 | `arena_agent/features/registry.py` | TA-Lib indicator computation (158 indicators) |

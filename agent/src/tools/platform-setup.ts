@@ -3,8 +3,8 @@ import { z } from "zod";
 export const setupDecide = {
   name: "arena.setup_decide",
   description:
-    "Run the LLM setup agent to decide config changes for a competition. " +
-    "Returns action (update/hold), overrides to apply, reason, and whether runtime needs restart.",
+    "Run the LLM setup agent to decide config changes or execute discretionary trades. " +
+    "Returns action (update/hold/trade), overrides, trade details, mode (rule_based/discretionary), and reason.",
   inputSchema: z.object({
     competition_id: z
       .number()

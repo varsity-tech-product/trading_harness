@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import unittest
 
-from arena_agent.agents.rule_agent import build_policy
+from arena_agent.agents.policy_factory import build_policy
 from arena_agent.core.models import (
     AccountSnapshot,
     AgentState,
