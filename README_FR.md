@@ -123,7 +123,7 @@ Ce qu'on peut faire :
 - **158 indicateurs techniques** — SMA, EMA, RSI, MACD, bandes de Bollinger, ADX, 61 patterns de bougies…
 - **5 backends LLM** — Claude Code, Gemini CLI, OpenClaw, Codex, ou pur règles sans LLM
 - **Mode autopilote** — le LLM ajuste la stratégie toutes les 10-60 min, le moteur de règles exécute à chaque bougie (1 min par défaut)
-- **Moniteur TUI** — tableau de bord terminal en temps réel
+- **Moniteur TUI** — phase de boucle, backend, expressions de stratégie, paramètres de trade, indicateurs en direct, compte et historique dans le terminal
 - **Zéro config** — `arena-agent init` gère Python, TA-Lib, le câblage MCP et l'inscription à la compétition
 - **Bascule auto de backend** — si le LLM principal tombe, on passe automatiquement au backup
 

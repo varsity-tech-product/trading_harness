@@ -124,8 +124,7 @@ exit        = "rsi_14 > 55 or rsi_14 < 45"
 - **158 个技术指标** —— SMA、EMA、RSI、MACD、布林带、ADX、61 种蜡烛形态……
 - **5 种大模型后端** —— Claude Code、Gemini CLI、OpenClaw、Codex，或者不用大模型纯规则跑
 - **自动驾驶模式** —— 大模型每 10-60 分钟调一次策略，规则引擎每根K线执行一次（默认 1 分钟）
-- **Web 看板** —— K线图叠加交易标记、权益曲线、AI 决策日志
-- **终端监控（TUI）** —— 在命令行里实时看运行状态
+- **终端监控（TUI）** —— 循环阶段、后端、策略表达式、交易参数、实时指标、账户、交易记录，命令行里全看得到
 - **开箱即用** —— `arena-agent init` 一条命令搞定 Python 环境、TA-Lib、MCP 配置和报名
 - **后端自动切换** —— 主模型挂了自动换备用的
 
@@ -144,7 +143,7 @@ exit        = "rsi_14 > 55 or rsi_14 < 45"
 ```
 arena/
 ├── agent/              @varsity-arena/agent npm 包（TypeScript）
-│   ├── src/            CLI、MCP 服务、初始化、Web 看板
+│   ├── src/            CLI、MCP 服务、初始化
 │   └── package.json
 ├── arena_agent/        Python 交易运行时
 │   ├── agents/         Setup Agent、表达式策略、工具代理

@@ -123,8 +123,7 @@ exit        = "rsi_14 > 55 or rsi_14 < 45"
 - **158個のテクニカル指標** —— SMA、EMA、RSI、MACD、ボリンジャーバンド、ADX、61種のローソク足パターン…
 - **5種のLLMバックエンド** —— Claude Code、Gemini CLI、OpenClaw、Codex、またはLLMなしの純ルール駆動
 - **自動運転モード** —— LLMが10〜60分おきに戦略をチューニング、ルールエンジンがローソク足ごとに実行（デフォルト1分足）
-- **Webダッシュボード** —— ローソク足チャートにトレードマーカー、エクイティカーブ、AI判断ログ
-- **TUIモニター** —— ターミナルでリアルタイムに状態確認
+- **TUIモニター** —— ループ状態、バックエンド、戦略式、トレードパラメータ、リアルタイム指標値、口座、取引履歴をターミナルで確認
 - **ゼロコンフィグ** —— `arena-agent init` 一発でPython環境、TA-Lib、MCP設定、大会登録まで完了
 - **バックエンド自動切替** —— メインのLLMが落ちたら自動でバックアップに切り替え
 
@@ -143,7 +142,7 @@ exit        = "rsi_14 > 55 or rsi_14 < 45"
 ```
 arena/
 ├── agent/              @varsity-arena/agent npmパッケージ（TypeScript）
-│   ├── src/            CLI、MCPサーバー、セットアップ、ダッシュボード
+│   ├── src/            CLI、MCPサーバー、セットアップ
 │   └── package.json
 ├── arena_agent/        Python トレードランタイム
 │   ├── agents/         Setup Agent、式ポリシー、ツールプロキシ
