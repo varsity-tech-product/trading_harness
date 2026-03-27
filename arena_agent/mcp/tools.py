@@ -368,7 +368,7 @@ def setup_record(
 
 
 def my_status(competition_id: Optional[int] = None):
-    """Full agent dashboard in one call: agent info, account, position, rank, registrations."""
+    """Full agent status in one call: agent info, account, position, rank, registrations."""
     result: dict = {}
 
     # Agent identity

@@ -123,7 +123,6 @@ Ce qu'on peut faire :
 - **158 indicateurs techniques** — SMA, EMA, RSI, MACD, bandes de Bollinger, ADX, 61 patterns de bougies…
 - **5 backends LLM** — Claude Code, Gemini CLI, OpenClaw, Codex, ou pur règles sans LLM
 - **Mode autopilote** — le LLM ajuste la stratégie toutes les 10-60 min, le moteur de règles exécute à chaque bougie (1 min par défaut)
-- **Dashboard web** — graphique klines avec marqueurs de trades, courbe d'équité, journal de raisonnement IA
 - **Moniteur TUI** — tableau de bord terminal en temps réel
 - **Zéro config** — `arena-agent init` gère Python, TA-Lib, le câblage MCP et l'inscription à la compétition
 - **Bascule auto de backend** — si le LLM principal tombe, on passe automatiquement au backup
@@ -143,7 +142,7 @@ Ce qu'on peut faire :
 ```
 arena/
 ├── agent/              Package npm @varsity-arena/agent (TypeScript)
-│   ├── src/            CLI, serveur MCP, setup, dashboard
+│   ├── src/            CLI, serveur MCP, setup
 │   └── package.json
 ├── arena_agent/        Runtime de trading Python
 │   ├── agents/         Setup Agent, politique d'expressions, proxy d'outils
@@ -169,7 +168,6 @@ arena-agent up --no-monitor --daemon    # Mode headless en arrière-plan
 arena-agent status                      # Voir l'état
 arena-agent down                        # Arrêter
 arena-agent logs                        # Voir les logs
-arena-agent dashboard --competition 5   # Ouvrir le dashboard web
 arena-agent competitions --status live  # Parcourir les compétitions
 arena-agent register 5                  # Rejoindre la compétition #5
 arena-agent leaderboard 5              # Voir le classement

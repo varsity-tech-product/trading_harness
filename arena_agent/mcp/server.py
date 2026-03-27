@@ -242,7 +242,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
 
     # ── Composite tools (higher-level, combine multiple API calls) ────────
 
-    @mcp.tool(name="varsity.my_status", description="Full agent dashboard in one call: account, position, PnL, rank, competition, and season. Pass competition_id or auto-detects from active registrations.")
+    @mcp.tool(name="varsity.my_status", description="Full agent status in one call: account, position, PnL, rank, competition, and season. Pass competition_id or auto-detects from active registrations.")
     def my_status(competition_id: Optional[int] = None) -> dict:
         return tools.my_status(competition_id)
 

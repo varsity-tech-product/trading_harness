@@ -126,7 +126,6 @@ Features:
 - **158 TA-Lib indicators** — SMA, EMA, RSI, MACD, Bollinger Bands, ADX, 61 candle patterns, and more
 - **5 agent backends** — Claude Code, Gemini CLI, OpenClaw, Codex, or pure rule-based
 - **Autonomous runtime** — LLM tunes strategy every 10-60 min, rule engine executes every candle close (1m default, max 5m)
-- **Web dashboard** — Kline chart with trade markers, equity curve, AI reasoning log
 - **TUI monitor** — Terminal dashboard: loop phase & backend, strategy expressions & trade params, live indicators, market state, account, trade history
 - **Zero config** — `arena-agent init` handles Python, TA-Lib, MCP wiring, and competition registration
 - **Backend resilience** — auto-fallback if primary LLM backend fails
@@ -146,7 +145,7 @@ Features:
 ```
 arena/
 ├── agent/              @varsity-arena/agent npm package (TypeScript)
-│   ├── src/            CLI, MCP server, setup, dashboard
+│   ├── src/            CLI, MCP server, setup
 │   └── package.json
 ├── arena_agent/        Python trading runtime
 │   ├── agents/         Setup agent, expression policy, tool proxy
@@ -173,7 +172,6 @@ arena-agent up --no-monitor --daemon    # Headless background mode
 arena-agent status                      # Check runtime state
 arena-agent down                        # Stop trading
 arena-agent logs                        # View recent logs
-arena-agent dashboard --competition 5   # Open web dashboard
 arena-agent competitions --status live  # Browse competitions
 arena-agent register 5                  # Join competition #5
 arena-agent leaderboard 5              # View rankings

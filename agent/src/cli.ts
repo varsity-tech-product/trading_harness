@@ -23,7 +23,6 @@ import { createInterface } from "node:readline/promises";
 
 import { serve } from "./index.js";
 import { PythonBridge } from "./python-bridge.js";
-import { startDashboard } from "./dashboard/serve.js";
 import { findArenaRoot, findPython } from "./util/paths.js";
 import { checkPythonEnvironment } from "./setup/detect-python.js";
 import { CLIENT_SETUP, autoWireMcpForAgent } from "./setup/client-configs.js";
@@ -227,11 +226,6 @@ async function main(): Promise<void> {
 
   if (command === "debug-env") {
     runDebugEnv();
-    return;
-  }
-
-  if (command === "dashboard") {
-    await runDashboard();
     return;
   }
 
@@ -1083,7 +1077,6 @@ function printUsage(invocation: string): void {
   console.log("  status                   Show runtime pid, config, and monitor port");
   console.log("  down                     Stop the background runtime");
   console.log("  logs                     Print recent runtime logs");
-  console.log("  dashboard                Open web dashboard (kline, equity, AI reasoning). Use -d to daemonize.");
   console.log("  competitions             List active competitions");
   console.log("  register <id>            Register for a competition");
   console.log("  leaderboard <id>         View competition leaderboard");
@@ -1101,7 +1094,6 @@ function printUsage(invocation: string): void {
   console.log("  arena-mcp setup --client codex");
   console.log("  arena-agent setup --client openclaw --mode cli");
   console.log("  arena-agent setup --client openclaw --mode mcp");
-  console.log("  arena-agent dashboard --competition 5 -d");
   console.log("  arena-agent competitions --status live");
   console.log("  arena-agent register 5");
   console.log("  arena-agent leaderboard 5");
@@ -1420,71 +1412,6 @@ function runDebugEnv(): void {
   console.log("");
   console.log("If the API key shows (unset) and no stored key exists,");
   console.log("run: arena-agent init");
-}
-
-async function runDashboard(): Promise<void> {
-  const home = resolveConfiguredHome(optionValue("--home"));
-  const port = Number(optionValue("--port") ?? "3000");
-  const competitionId = optionValue("--competition")
-    ? Number(optionValue("--competition"))
-    : undefined;
-
-  // Find transitions file from artifacts dir
-  let transitionsPath = optionValue("--transitions") ?? undefined;
-  if (!transitionsPath) {
-    const artifactsDir = resolve(home, "artifacts");
-    if (existsSync(artifactsDir)) {
-      transitionsPath = artifactsDir;
-    }
-  }
-
-  const daemon = hasFlag("--daemon") || hasFlag("-d");
-
-  if (daemon) {
-    // Spawn dashboard as a detached background process
-    const args = process.argv.slice(1).filter(a => a !== "--daemon" && a !== "-d");
-    const child = spawn(process.execPath, args, {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: "ignore",
-      detached: true,
-    });
-    child.unref();
-    const url = `http://localhost:${port}`;
-    console.log(`Dashboard running in background (pid ${child.pid ?? "?"}).`);
-    console.log(`Open ${url} in your browser.`);
-    if (competitionId) console.log(`Competition: ${competitionId}`);
-
-    // Try to open browser
-    try {
-      const openCmd = process.platform === "darwin"
-        ? `open "${url}"`
-        : process.platform === "win32"
-          ? `start "${url}"`
-          : `xdg-open "${url}" 2>/dev/null || true`;
-      spawn("sh", ["-c", openCmd], { stdio: "ignore", detached: true }).unref();
-    } catch {}
-    return;
-  }
-
-  // Foreground mode — start server and keep running
-  startDashboard({
-    arenaRoot: home,
-    port,
-    competitionId,
-    transitionsPath,
-  });
-
-  // Try to open browser
-  const url = `http://localhost:${port}`;
-  try {
-    const openCmd = process.platform === "darwin"
-      ? `open "${url}"`
-      : process.platform === "win32"
-        ? `start "${url}"`
-        : `xdg-open "${url}" 2>/dev/null || true`;
-    spawn("sh", ["-c", openCmd], { stdio: "ignore", detached: true }).unref();
-  } catch {}
 }
 
 async function runCompetitions(): Promise<void> {

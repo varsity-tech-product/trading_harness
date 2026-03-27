@@ -170,7 +170,6 @@ arena-agent up --no-monitor --daemon    # 后台静默运行
 arena-agent status                      # 看运行状态
 arena-agent down                        # 停止
 arena-agent logs                        # 看日志
-arena-agent dashboard --competition 5   # 打开 Web 看板
 arena-agent competitions --status live  # 看有哪些比赛
 arena-agent register 5                  # 报名比赛 #5
 arena-agent leaderboard 5              # 看排行榜

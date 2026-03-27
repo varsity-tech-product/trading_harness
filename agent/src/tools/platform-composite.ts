@@ -3,7 +3,7 @@ import { z } from "zod";
 export const myStatus = {
   name: "arena.my_status",
   description:
-    "Full agent dashboard in one call: account, position, PnL, rank, competition, and season. Pass competition_id or auto-detects from active registrations.",
+    "Full agent status in one call: account, position, PnL, rank, competition, and season. Pass competition_id or auto-detects from active registrations.",
   inputSchema: z.object({
     competition_id: z
       .number()
