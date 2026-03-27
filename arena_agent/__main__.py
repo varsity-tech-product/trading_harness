@@ -270,6 +270,9 @@ def _run_auto(argv: list[str]) -> None:
     except OSError as exc:
         log.warning("Observability stream unavailable: %s", exc)
     monitor._attach_log_handler()
+    # Mark as started so MarketRuntime.start() resets runtime fields
+    # instead of trying to bind the port again.
+    monitor._started = True
     monitor.update_auto_loop({"active": True, "setup_backend": setup_backend})
 
     # --- Liveness state ---
