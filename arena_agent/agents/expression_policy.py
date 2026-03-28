@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -117,14 +118,17 @@ class ExpressionPolicy(Policy):
     entry_long: str = "False"
     entry_short: str = "False"
     exit_expr: str = "False"
+    reentry_cooldown_seconds: float = 300.0
     name: str = "expression"
 
     _validation_errors: dict[str, str] = field(init=False, default_factory=dict)
     _logger: logging.Logger = field(init=False, repr=False)
+    _last_close_time: float = field(init=False, default=0.0)
 
     def __post_init__(self) -> None:
         self._logger = logging.getLogger("arena_agent.expression_policy")
         self._validation_errors = {}
+        self._last_close_time = 0.0
 
         # Validate all expressions at construction time
         for label, expr in [
@@ -171,12 +175,22 @@ class ExpressionPolicy(Policy):
         if has_position:
             # Check exit condition
             if _safe_eval(self.exit_expr, ns):
+                self._last_close_time = time.time()
                 return Action(
                     type=ActionType.CLOSE_POSITION,
                     metadata={"reason": f"exit expression: {self.exit_expr}"},
                 )
             return Action.hold(reason="expression_no_exit_signal")
         else:
+            # Reentry cooldown — suppress entry signals after a close
+            if self.reentry_cooldown_seconds > 0 and self._last_close_time > 0:
+                elapsed = time.time() - self._last_close_time
+                if elapsed < self.reentry_cooldown_seconds:
+                    remaining = self.reentry_cooldown_seconds - elapsed
+                    return Action.hold(
+                        reason=f"reentry_cooldown: {remaining:.0f}s remaining",
+                    )
+
             # Check entry conditions
             if _safe_eval(self.entry_long, ns):
                 return Action(
