@@ -24,24 +24,20 @@ flowchart TD
     APPEND --> LLM_CALL
 
     TOOL_CHECK -->|no| PARSE[Parse Decision<br/>normalize sizing / TP / SL]
-    PARSE --> MODE_SW[Apply mode switch<br/>if decision.mode changed]
-    MODE_SW --> ACTION{Action?}
+    PARSE --> MODE{Mode?}
 
-    ACTION -->|update| COOLDOWN{Strategy<br/>cooldown<br/>active?}
+    MODE -->|rule_based| RB_ACTION{Action?}
+    RB_ACTION -->|update| COOLDOWN{Strategy<br/>cooldown<br/>active?}
     COOLDOWN -->|yes| DEMOTE[Demote to hold]
     COOLDOWN -->|no| MERGE[Deep-merge overrides<br/>into config_dict]
-    DEMOTE --> MODE_CHECK
-    MERGE --> MODE_CHECK
+    DEMOTE --> RUNTIME
+    MERGE --> RUNTIME
+    RB_ACTION -->|hold| RUNTIME[Runtime Phase<br/>expression engine evaluates<br/>each tick for 10-20 min]
 
-    ACTION -->|hold| MODE_CHECK
-
-    ACTION -->|trade| DISC_EXEC[Execute Trade<br/>open / close / tpsl]
+    MODE -->|discretionary| DISC_ACTION{Action?}
+    DISC_ACTION -->|trade| DISC_EXEC[Execute Trade<br/>open / close / tpsl]
     DISC_EXEC --> DISC_SLEEP
-
-    MODE_CHECK{Mode?}
-
-    MODE_CHECK -->|rule_based| RUNTIME[Runtime Phase<br/>expression engine evaluates<br/>each tick for 10-20 min]
-    MODE_CHECK -->|discretionary| DISC_SLEEP[Sleep next_check_seconds<br/>min 600s]
+    DISC_ACTION -->|hold| DISC_SLEEP[Sleep next_check_seconds<br/>min 600s]
 
     RUNTIME --> FEEDBACK[Feedback Loop<br/>expression errors + indicator ranges<br/>stored for next cycle]
     DISC_SLEEP --> NEXT[Next Setup Cycle]
