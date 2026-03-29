@@ -35,16 +35,13 @@ flowchart TD
 
     ACTION -->|hold| MODE_CHECK
 
-    ACTION -->|trade| DISC_GUARD{Direction<br/>guardrail<br/>3+ losses?}
-    DISC_GUARD -->|blocked| DEMOTE_HOLD[Demote to hold]
-    DISC_GUARD -->|ok| DISC_EXEC[Execute Trade<br/>open / close / tpsl]
+    ACTION -->|trade| DISC_EXEC[Execute Trade<br/>open / close / tpsl]
     DISC_EXEC --> MODE_CHECK
-    DEMOTE_HOLD --> MODE_CHECK
 
     MODE_CHECK{Mode?}
 
     MODE_CHECK -->|rule_based| RUNTIME[Runtime Phase<br/>expression engine evaluates<br/>each tick for 10-20 min]
-    MODE_CHECK -->|discretionary| DISC_SLEEP[Sleep next_check_seconds<br/>min 60s trade / 600s hold]
+    MODE_CHECK -->|discretionary| DISC_SLEEP[Sleep next_check_seconds<br/>min 600s]
 
     RUNTIME --> FEEDBACK[Feedback Loop<br/>expression errors + indicator ranges<br/>stored for next cycle]
     DISC_SLEEP --> NEXT[Next Setup Cycle]
@@ -265,8 +262,7 @@ When the LLM switches to `mode: "discretionary"`:
 - No expression engine — LLM makes trade decisions directly
 - Returns `action: "trade"` with `trade: {type: "OPEN_LONG", tp_pct: 1.5, sl_pct: 0.8, sizing_fraction: 80}`
 - Runtime executes the trade immediately via `_execute_discretionary_trade()`
-- Next check interval: minimum 60s for active trades, 600s for holds
-- Direction guardrails: blocks same-direction after 3 consecutive losses
+- Next check interval: minimum 600s (same as rule-based)
 
 ---
 
@@ -281,8 +277,7 @@ When the LLM switches to `mode: "discretionary"`:
 | Sizing normalization | Micro-positions from decimal parsing (0.8 → 80%) | Min 10% |
 | TP/SL minimums | Trades that can't overcome fees | TP ≥ 0.5%, SL ≥ 0.3% |
 | Chat rate limit | Chat spam | Once per 5 cycles |
-| Direction guardrails | Doubling down on losing direction | Block after 3 losses |
-| Discretionary hold clamp | Token waste from 60s hold cycles | 10 min minimum |
+| Min check interval | Token waste from frequent setup cycles | 600s (all modes) |
 
 ---
 

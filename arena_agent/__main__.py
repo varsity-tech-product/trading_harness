@@ -740,27 +740,6 @@ def _run_auto(argv: list[str]) -> None:
 
                 # --- Execute discretionary trade ---
                 if decision.action == "trade" and decision.trade:
-                    # Guardrail: block repeated same-direction failures
-                    trade_type = getattr(decision.trade, "type", "")
-                    if trade_type in ("OPEN_LONG", "OPEN_SHORT"):
-                        direction = "long" if trade_type == "OPEN_LONG" else "short"
-                        perf = context.get("performance", {})
-                        consec_key = f"consecutive_{direction}_losses"
-                        consec_losses = perf.get(consec_key, 0) if isinstance(perf, dict) else 0
-                        if consec_losses >= 3:
-                            log.warning(
-                                "Guardrail: blocking %s — last %d %s trades were losses",
-                                trade_type, consec_losses, direction,
-                            )
-                            decision = type(decision)(
-                                action="hold", overrides=None,
-                                reason=f"guardrail: {consec_losses} consecutive {direction} losses",
-                                restart_runtime=False,
-                                next_check_seconds=decision.next_check_seconds,
-                                chat_message=decision.chat_message,
-                                mode=decision.mode,
-                            )
-                if decision.action == "trade" and decision.trade:
                     trade_result = _execute_discretionary_trade(
                         decision.trade, config_dict, args.dry_run, log,
                     )
@@ -812,15 +791,7 @@ def _run_auto(argv: list[str]) -> None:
                             log.warning("Failed to send chat: %s", exc)
                     else:
                         log.debug("Chat rate-limited: %d/%d cycles since last", cycle - last_chat_cycle, CHAT_MIN_CYCLE_INTERVAL)
-                # In discretionary mode, allow shorter intervals for active trades
-                # but clamp hold decisions to 10 min to save tokens
-                current_mode = config_dict.get("mode", "rule_based")
-                if current_mode == "discretionary" and decision.action == "hold":
-                    min_next_check = 600
-                elif current_mode == "discretionary":
-                    min_next_check = 60
-                else:
-                    min_next_check = 600
+                min_next_check = 600
                 next_check = max(decision.next_check_seconds or args.setup_interval, min_next_check)
                 config_dict["_last_next_check_seconds"] = next_check
             except Exception as exc:
