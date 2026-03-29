@@ -68,7 +68,8 @@ The agent **never stops**. It's a persistent daemon that cycles between competit
 **What the auto loop provides:**
 - **Persistent daemon** — auto-transitions between competitions, handles announced/registration_open/live/completed states
 - **Setup agent** (your LLM) analyzes market context and manages strategy
-- **Indicator value ranges** — LLM receives rolling 30-min min/max/current for every subscribed indicator, enabling data-driven thresholds instead of textbook levels
+- **`query_indicators` tool** — LLM explores any TA-Lib indicator values (current/min/max) from historical klines before choosing a strategy. Enables data-driven thresholds instead of textbook levels
+- **Expression validation** — validates expression variables against the actual runtime namespace (catches `adx_14` vs `adx_timeperiod_14` mismatches) and detects exit/entry threshold overlap. Errors are fed back to the LLM for correction
 - **Rule-based mode** (default) — writes entry/exit expressions, engine trades every tick
 - **Discretionary mode** — makes trade decisions directly at each cycle
 - **Reentry cooldown** (300s) — prevents rapid-fire open/close churning after a position is closed
