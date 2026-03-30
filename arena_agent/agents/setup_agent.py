@@ -509,7 +509,25 @@ class SetupAgent:
 
         logger.info("Setup agent invoking %s (timeout=%ss)", self._resolved_backend, self.timeout)
         try:
-            payload = self._run_cli_with_tools(prompt)
+            try:
+                payload = self._run_cli_with_tools(prompt)
+            except (ValueError, json.JSONDecodeError) as json_exc:
+                if "not valid JSON" in str(json_exc) or isinstance(json_exc, json.JSONDecodeError):
+                    logger.warning("LLM returned invalid JSON — retrying with feedback: %s", json_exc)
+                    retry_prompt = (
+                        prompt
+                        + "\n\n--- JSON Parse Error ---\n"
+                        "Your previous response was NOT valid JSON and could not be parsed.\n"
+                        f"Error: {json_exc}\n"
+                        "You MUST return a single valid JSON object. "
+                        "If using tool_calls, put ALL calls in ONE array: "
+                        '{"tool_calls": [{"tool": "...", "args": {...}}, {"tool": "...", "args": {...}}]}\n'
+                        "Return your corrected JSON now.\n"
+                        "--- End Error ---"
+                    )
+                    payload = self._run_cli_with_tools(retry_prompt)
+                else:
+                    raise
             self._consecutive_failures = 0
             decision = self._parse_decision(payload)
             # Check for exit/entry overlap and let the LLM retry once

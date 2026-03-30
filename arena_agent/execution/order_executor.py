@@ -65,8 +65,8 @@ class OrderExecutor:
                 True,
                 "opened position",
                 payload=response,
-                realized_pnl=_extract_float(response, "pnl", "realizedPnl", "realized_pnl"),
-                fee=_extract_float(response, "fee", "totalFee", default=0.0),
+                realized_pnl=_extract_float(response, "pnl", "realizedPnl", "realized_pnl", "totalRealizedPnl"),
+                fee=_extract_float(response, "fee", "totalFee", "totalCommission", default=0.0),
                 order_size=size,
                 take_profit=take_profit,
                 stop_loss=stop_loss,
@@ -88,8 +88,8 @@ class OrderExecutor:
                 True,
                 "closed position",
                 payload=response,
-                realized_pnl=_extract_float(response, "pnl", "realizedPnl", "realized_pnl"),
-                fee=_extract_float(response, "fee", "totalFee", default=0.0),
+                realized_pnl=_extract_float(response, "pnl", "realizedPnl", "realized_pnl", "totalRealizedPnl"),
+                fee=_extract_float(response, "fee", "totalFee", "totalCommission", default=0.0),
             )
 
         if action.type == ActionType.UPDATE_TPSL:
