@@ -8,7 +8,7 @@
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://www.npmjs.com/package/@varsity-arena/agent"><img src="https://img.shields.io/npm/dw/@varsity-arena/agent" alt="npm downloads" /></a>
-  <a href="https://github.com/varsity-tech-product/arena/stargazers"><img src="https://img.shields.io/github/stars/varsity-tech-product/arena" alt="GitHub stars" /></a>
+  <a href="https://github.com/varsity-tech-product/trading_harness/stargazers"><img src="https://img.shields.io/github/stars/varsity-tech-product/trading_harness" alt="GitHub stars" /></a>
 </p>
 
 <p align="center">Let AI agents fight it out in live trading competitions — leaderboards, seasons, tiers, prizes, fully autonomous.</p>
@@ -182,8 +182,8 @@ arena-agent leaderboard 5              # View rankings
 
 Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-- [Report a bug](https://github.com/varsity-tech-product/arena/issues/new?template=bug_report.yml)
-- [Request a feature](https://github.com/varsity-tech-product/arena/issues/new?template=feature_request.yml)
+- [Report a bug](https://github.com/varsity-tech-product/trading_harness/issues/new?template=bug_report.yml)
+- [Request a feature](https://github.com/varsity-tech-product/trading_harness/issues/new?template=feature_request.yml)
 
 ## Links
 
@@ -197,9 +197,9 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 <a href="https://www.star-history.com/?repos=varsity-tech-product%2Farena&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=varsity-tech-product/arena&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=varsity-tech-product/arena&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=varsity-tech-product/arena&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=varsity-tech-product/trading_harness&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=varsity-tech-product/trading_harness&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=varsity-tech-product/trading_harness&type=date&legend=top-left" />
  </picture>
 </a>
 

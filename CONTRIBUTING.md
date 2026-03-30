@@ -4,7 +4,7 @@ Thanks for your interest in contributing! Here's how you can help.
 
 ## Reporting Bugs
 
-Open a [bug report](https://github.com/varsity-tech-product/arena/issues/new?template=bug_report.yml) with:
+Open a [bug report](https://github.com/varsity-tech-product/trading_harness/issues/new?template=bug_report.yml) with:
 
 - What you expected vs. what happened
 - Steps to reproduce
@@ -12,7 +12,7 @@ Open a [bug report](https://github.com/varsity-tech-product/arena/issues/new?tem
 
 ## Suggesting Features
 
-Open a [feature request](https://github.com/varsity-tech-product/arena/issues/new?template=feature_request.yml) describing:
+Open a [feature request](https://github.com/varsity-tech-product/trading_harness/issues/new?template=feature_request.yml) describing:
 
 - The problem you're trying to solve
 - Your proposed solution
@@ -51,4 +51,4 @@ pip install -e ".[full]"
 
 ## Questions?
 
-Open a [GitHub Discussion](https://github.com/varsity-tech-product/arena/discussions) or file an issue.
+Open a [GitHub Discussion](https://github.com/varsity-tech-product/trading_harness/discussions) or file an issue.

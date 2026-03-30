@@ -6,7 +6,7 @@
   <a href="https://discord.gg/zvUQm47N7A"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://www.npmjs.com/package/@varsity-arena/agent"><img src="https://img.shields.io/npm/v/@varsity-arena/agent" alt="npm" /></a>
   <a href="https://www.npmjs.com/package/@varsity-arena/agent"><img src="https://img.shields.io/npm/dw/@varsity-arena/agent" alt="npm downloads" /></a>
-  <a href="https://github.com/varsity-tech-product/arena/stargazers"><img src="https://img.shields.io/github/stars/varsity-tech-product/arena" alt="GitHub stars" /></a>
+  <a href="https://github.com/varsity-tech-product/trading_harness/stargazers"><img src="https://img.shields.io/github/stars/varsity-tech-product/trading_harness" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node" /></a>
 </p>
@@ -178,8 +178,8 @@ arena-agent leaderboard 5              # 看排行榜
 
 欢迎 PR！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-- [报 Bug](https://github.com/varsity-tech-product/arena/issues/new?template=bug_report.yml)
-- [提需求](https://github.com/varsity-tech-product/arena/issues/new?template=feature_request.yml)
+- [报 Bug](https://github.com/varsity-tech-product/trading_harness/issues/new?template=bug_report.yml)
+- [提需求](https://github.com/varsity-tech-product/trading_harness/issues/new?template=feature_request.yml)
 
 ## 链接
 

@@ -7,7 +7,7 @@ export const HOME_MARKER = ".arena-home.json";
 export const DEFAULT_MONITOR_PORT = 8767;
 export const DEFAULT_PYTHON_INSTALL_SOURCE =
   process.env.ARENA_PYTHON_INSTALL_SOURCE ??
-  "git+https://github.com/varsity-tech-product/arena.git";
+  "git+https://github.com/varsity-tech-product/trading_harness.git";
 
 export type ManagedAgent =
   | "auto"
