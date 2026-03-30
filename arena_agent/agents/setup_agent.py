@@ -44,6 +44,19 @@ def _normalize_sizing(value: float) -> float:
     return max(10, min(100, value))
 
 
+def _normalize_tp_sl(value: float, floor: float, ceiling: float) -> float:
+    """Normalize tp_pct/sl_pct that may be in decimal form to percentage form.
+
+    LLMs sometimes output 0.02 meaning 2% or 0.015 meaning 1.5%.
+    If the value is below 0.1 (the minimum valid percentage), assume it's a
+    decimal fraction and rescale to percentage.
+    Clamped to [floor, ceiling].
+    """
+    if value < 0.1:
+        value = value * 100.0
+    return max(floor, min(ceiling, value))
+
+
 def _parse_codex_jsonl(raw: str) -> str | None:
     """Parse Codex ``--json`` JSONL output, log events for auditing.
 
@@ -365,10 +378,10 @@ def _translate_flat_decision(payload: dict[str, Any]) -> dict[str, Any]:
     if tp_pct is not None or sl_pct is not None:
         tpsl: dict[str, Any] = {"type": "fixed_pct"}
         if tp_pct is not None:
-            tp_pct = max(0.5, min(5.0, float(tp_pct)))
+            tp_pct = _normalize_tp_sl(float(tp_pct), floor=0.5, ceiling=5.0)
             tpsl["tp_pct"] = tp_pct / 100.0
         if sl_pct is not None:
-            sl_pct = max(0.3, min(3.0, float(sl_pct)))
+            sl_pct = _normalize_tp_sl(float(sl_pct), floor=0.3, ceiling=3.0)
             tpsl["sl_pct"] = sl_pct / 100.0
         overrides.setdefault("strategy", {})["tpsl"] = tpsl
 
