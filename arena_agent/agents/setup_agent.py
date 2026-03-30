@@ -512,6 +512,34 @@ class SetupAgent:
             payload = self._run_cli_with_tools(prompt)
             self._consecutive_failures = 0
             decision = self._parse_decision(payload)
+            # Check for exit/entry overlap and let the LLM retry once
+            overlap_error = self._check_expression_overlap(decision, context)
+            if overlap_error:
+                logger.warning("Expression overlap detected — re-invoking LLM: %s", overlap_error)
+                retry_prompt = (
+                    prompt
+                    + f"\n\n--- Expression Overlap Error ---\n"
+                    f"Your previous response was REJECTED because of exit/entry overlap:\n"
+                    f"{overlap_error}\n"
+                    f"The exit expression fires at the same time as the entry expression, "
+                    f"causing immediate close after open (fee death). "
+                    f"Fix the exit expression so it does NOT fire when the entry fires. "
+                    f"Return your corrected decision JSON.\n"
+                    f"--- End Error ---"
+                )
+                payload = self._run_cli_with_tools(retry_prompt)
+                decision = self._parse_decision(payload)
+                # Check again — if still overlapping, demote to hold
+                retry_overlap = self._check_expression_overlap(decision, context)
+                if retry_overlap:
+                    logger.warning("Expression overlap persists after retry — demoting to hold")
+                    return SetupDecision(
+                        action="hold", overrides=None,
+                        reason=f"expression_overlap_rejected: {retry_overlap}",
+                        restart_runtime=False,
+                        next_check_seconds=decision.next_check_seconds,
+                        chat_message=decision.chat_message,
+                    )
             # Apply cooldown enforcement
             decision = self._apply_cooldown(decision, context, current_trade_count)
             return decision
@@ -611,6 +639,51 @@ class SetupAgent:
             new_key, self._equity_at_last_change, current_trade_count,
         )
         return decision
+
+    @staticmethod
+    def _check_expression_overlap(
+        decision: SetupDecision,
+        context: dict[str, Any],
+    ) -> str | None:
+        """Check if exit expression overlaps with entry expressions at current values.
+
+        Returns an error message if overlap detected, None otherwise.
+        """
+        if decision.action != "update" or not decision.overrides:
+            return None
+        policy = decision.overrides.get("policy", {})
+        if not isinstance(policy, dict) or policy.get("type") != "expression":
+            return None
+        params = policy.get("params", {})
+        entry_long = params.get("entry_long", "")
+        entry_short = params.get("entry_short", "")
+        exit_expr = params.get("exit", "")
+        if not entry_long or not entry_short or not exit_expr:
+            return None
+
+        # Build namespace from current indicator values
+        from arena_agent.agents.expression_policy import _safe_eval
+        ind_vals = context.get("current_indicator_values", {})
+        ns: dict = {}
+        if isinstance(ind_vals, dict):
+            for k, v in ind_vals.items():
+                ns[k] = v.get("current", 0) if isinstance(v, dict) else v
+        mkt = context.get("market_summary", {})
+        if isinstance(mkt, dict) and mkt.get("current_price"):
+            ns.setdefault("close", mkt["current_price"])
+
+        overlaps = []
+        if _safe_eval(entry_long, ns) and _safe_eval(exit_expr, ns):
+            overlaps.append(
+                f"entry_long '{entry_long}' and exit '{exit_expr}' both TRUE "
+                f"at current values — longs will close immediately"
+            )
+        if _safe_eval(entry_short, ns) and _safe_eval(exit_expr, ns):
+            overlaps.append(
+                f"entry_short '{entry_short}' and exit '{exit_expr}' both TRUE "
+                f"at current values — shorts will close immediately"
+            )
+        return "; ".join(overlaps) if overlaps else None
 
     def _try_fallback(self) -> None:
         """Switch to an alternative backend after consecutive failures."""

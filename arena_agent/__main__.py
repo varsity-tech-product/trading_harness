@@ -781,43 +781,6 @@ def _run_auto(argv: list[str]) -> None:
                         inactive_since = None
 
                 if decision.action == "update" and decision.overrides:
-                    # --- Reject expressions with exit/entry overlap ---
-                    new_policy = decision.overrides.get("policy", {})
-                    if isinstance(new_policy, dict) and new_policy.get("type") == "expression":
-                        new_params = new_policy.get("params", {})
-                        entry_long = new_params.get("entry_long", "")
-                        entry_short = new_params.get("entry_short", "")
-                        exit_expr = new_params.get("exit", "")
-                        if entry_long and entry_short and exit_expr:
-                            # Build a namespace from current indicator values for overlap test
-                            ind_vals = context.get("current_indicator_values", {})
-                            test_ns: dict = {}
-                            if isinstance(ind_vals, dict):
-                                for k, v in ind_vals.items():
-                                    test_ns[k] = v.get("current", 0) if isinstance(v, dict) else v
-                            mkt = context.get("market_summary", {})
-                            if isinstance(mkt, dict) and mkt.get("current_price"):
-                                test_ns.setdefault("close", mkt["current_price"])
-                            from arena_agent.agents.expression_policy import _safe_eval
-                            overlap_long = _safe_eval(entry_long, test_ns) and _safe_eval(exit_expr, test_ns)
-                            overlap_short = _safe_eval(entry_short, test_ns) and _safe_eval(exit_expr, test_ns)
-                            if overlap_long or overlap_short:
-                                direction = "long" if overlap_long else "short"
-                                log.warning(
-                                    "Rejecting update: exit/entry_%s overlap detected — "
-                                    "entry and exit both fire at current values. "
-                                    "Keeping previous strategy.",
-                                    direction,
-                                )
-                                decision = type(decision)(
-                                    action="hold", overrides=None,
-                                    reason=f"rejected: exit/entry_{direction} overlap at current indicator values",
-                                    restart_runtime=False,
-                                    next_check_seconds=decision.next_check_seconds,
-                                    chat_message=decision.chat_message,
-                                    mode=decision.mode,
-                                )
-                if decision.action == "update" and decision.overrides:
                     log.info("Applying overrides: %s", json.dumps(decision.overrides, default=str)[:2000])
                     new_policy = decision.overrides.get("policy", {})
                     old_policy_type = config_dict.get("policy", {}).get("type")
