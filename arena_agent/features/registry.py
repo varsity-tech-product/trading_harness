@@ -70,8 +70,12 @@ def feature_key(indicator: str, params: dict[str, Any], explicit_key: str | None
     indicator_name = normalize_indicator_name(indicator)
     params = normalize_params(params)
 
-    if indicator_name in {"SMA", "EMA", "RSI", "ATR"}:
-        return f"{indicator_name.lower()}_{int(params.get('timeperiod', 14))}"
+    # Any indicator whose only param is timeperiod gets the short format:
+    # e.g. ADX(timeperiod=14) -> "adx_14", CCI(timeperiod=14) -> "cci_14"
+    if set(params.keys()) <= {"timeperiod"}:
+        if "timeperiod" in params:
+            return f"{indicator_name.lower()}_{int(params['timeperiod'])}"
+        return indicator_name.lower()
     if indicator_name == "MACD":
         return "macd_{fast}_{slow}_{signal}".format(
             fast=int(params.get("fastperiod", 12)),

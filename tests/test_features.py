@@ -80,6 +80,40 @@ class FeatureEngineTest(unittest.TestCase):
         self.assertIn("mavp_test", signal_state.values)
 
 
+class FeatureKeyTest(unittest.TestCase):
+    def test_single_timeperiod_indicators_use_short_format(self) -> None:
+        from arena_agent.features.registry import feature_key
+        for name in ("ADX", "CCI", "DX", "NATR", "TRIX", "CMO", "MFI",
+                     "MOM", "ROC", "WILLR", "RSI", "SMA", "EMA", "ATR"):
+            key = feature_key(name, {"timeperiod": 14})
+            self.assertEqual(key, f"{name.lower()}_14",
+                             f"{name} should produce '{name.lower()}_14', got '{key}'")
+
+    def test_multi_word_indicator_short_format(self) -> None:
+        from arena_agent.features.registry import feature_key
+        self.assertEqual(feature_key("MINUS_DI", {"timeperiod": 14}), "minus_di_14")
+        self.assertEqual(feature_key("PLUS_DI", {"timeperiod": 14}), "plus_di_14")
+
+    def test_macd_keeps_special_format(self) -> None:
+        from arena_agent.features.registry import feature_key
+        key = feature_key("MACD", {"fastperiod": 12, "slowperiod": 26, "signalperiod": 9})
+        self.assertEqual(key, "macd_12_26_9")
+
+    def test_bbands_keeps_special_format(self) -> None:
+        from arena_agent.features.registry import feature_key
+        key = feature_key("BBANDS", {"timeperiod": 20, "nbdevup": 2.0, "nbdevdn": 2.0})
+        self.assertEqual(key, "bbands_20_2_2")
+
+    def test_no_params_indicator(self) -> None:
+        from arena_agent.features.registry import feature_key
+        self.assertEqual(feature_key("OBV", {}), "obv")
+        self.assertEqual(feature_key("STOCH", {}), "stoch")
+
+    def test_explicit_key_takes_precedence(self) -> None:
+        from arena_agent.features.registry import feature_key
+        self.assertEqual(feature_key("RSI", {"timeperiod": 14}, explicit_key="my_rsi"), "my_rsi")
+
+
 class ResolveIndicatorSpecsTest(unittest.TestCase):
     def test_full_mode_returns_all_indicators(self) -> None:
         specs = resolve_indicator_specs({"indicator_mode": "full"}, [])

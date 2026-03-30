@@ -195,17 +195,20 @@ def query_indicators(
     except ImportError:
         return {"error": "TA-Lib or arena_agent not available"}
 
-    # Parse indicator specs from NAME_PERIOD strings
+    # Parse indicator specs from NAME_PERIOD strings (e.g. "RSI_14", "MINUS_DI_14")
+    import re
     specs: list[FeatureSpec] = []
     for ind_str in indicators:
-        parts = ind_str.strip().split("_")
-        name = parts[0].upper()
-        params = {}
-        if len(parts) > 1:
-            try:
-                params["timeperiod"] = int(parts[-1])
-            except ValueError:
-                pass
+        ind_str = ind_str.strip()
+        m = re.match(r"^([A-Za-z_]+?)_(\d+)$", ind_str)
+        if m:
+            name = m.group(1).upper()
+            params = {"timeperiod": int(m.group(2))}
+        elif re.match(r"^[A-Za-z_]+$", ind_str):
+            name = ind_str.upper()
+            params = {}
+        else:
+            continue
         specs.append(FeatureSpec(indicator=name, params=params))
 
     if not specs:

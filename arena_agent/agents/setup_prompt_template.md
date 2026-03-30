@@ -65,7 +65,7 @@ policy_params must contain:
 
 Available variables in expressions:
 - Market data: `close`, `high`, `low`, `open`, `volume`
-- Any subscribed indicator (lowercase with period suffix): `rsi_14`, `sma_20`, `ema_12`, `macd_hist`, `macd_signal`, `bbands_upper`, `bbands_lower`, `atr_14`, `adx_14`, `cci_14`, `obv`, etc.
+- Any subscribed indicator (lowercase with period suffix): `rsi_14`, `sma_20`, `ema_12`, `macd_hist`, `macd_signal`, `bbands_upper`, `bbands_lower`, `atr_14`, `adx_14`, `cci_14`, `mfi_14`, `willr_14`, `minus_di_14`, `plus_di_14`, `obv`, etc.
 - Operators: `<`, `>`, `<=`, `>=`, `==`, `!=`, `and`, `or`, `not`, `+`, `-`, `*`, `/`
 - You can use arithmetic on indicators: `(sma_20 - sma_50)`, `atr_14 * 2`, `(close - sma_20) / atr_14`
 
