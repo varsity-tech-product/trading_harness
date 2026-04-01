@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { resolve, isAbsolute } from "node:path";
 import { findPython } from "../util/paths.js";
 import { buildChildEnv } from "../util/env.js";
@@ -111,29 +111,29 @@ export function findConfigPath(
   rawConfig: string | undefined,
   agent: string
 ): string {
-  const root = resolve(arenaRoot);
+  const root = realpathSync(resolve(arenaRoot));
   const candidates: string[] = [];
   if (rawConfig) {
-    const resolved = isAbsolute(rawConfig)
-      ? resolve(rawConfig)
-      : resolve(root, rawConfig);
+    const resolved = realpathSync(
+      isAbsolute(rawConfig) ? resolve(rawConfig) : resolve(root, rawConfig)
+    );
     if (!resolved.startsWith(root + "/") && resolved !== root) {
       throw new Error(`Config path must be inside the arena root: ${root}`);
     }
     candidates.push(resolved);
     if (!isAbsolute(rawConfig)) {
       const alt = resolve(root, "arena_agent", "config", rawConfig);
-      if (alt.startsWith(root + "/")) {
-        candidates.push(alt);
+      if (existsSync(alt) && realpathSync(alt).startsWith(root + "/")) {
+        candidates.push(realpathSync(alt));
       }
     }
-  } else if (isManagedArenaHome(arenaRoot)) {
-    const state = readArenaHomeState(arenaRoot);
+  } else if (isManagedArenaHome(root)) {
+    const state = readArenaHomeState(root);
     candidates.push(
-      state?.profiles.rule ?? resolve(arenaRoot, "config", "rule.yaml")
+      state?.profiles.rule ?? resolve(root, "config", "rule.yaml")
     );
   } else {
-    candidates.push(resolve(arenaRoot, "arena_agent", "config", "agent_config.yaml"));
+    candidates.push(resolve(root, "arena_agent", "config", "agent_config.yaml"));
   }
 
   for (const candidate of candidates) {

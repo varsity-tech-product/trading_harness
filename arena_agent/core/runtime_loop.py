@@ -326,7 +326,7 @@ class MarketRuntime:
                 time.sleep(nap)
                 sleep_remaining -= nap
 
-        # Close position on competition end (sigterm already closed in the loop)
+        # Close position when competition ends naturally
         if stop_reason in ("competition_inactive", "competition_exhausted"):
             self._close_position_on_exit()
 
