@@ -656,8 +656,8 @@ async function runAutoTrade(): Promise<number> {
       // 2. Register if needed
       if (competition.status === "registration_open") {
         try {
-          await bridge.callTool("varsity.register", { competition_id: competition.id });
-          console.log(`Registered for #${competition.id}.`);
+          await bridge.callTool("varsity.register", { slug: competition.slug });
+          console.log(`Registered for #${competition.id} (${competition.slug}).`);
         } catch {
           console.log(`Registration failed for #${competition.id}, may already be registered.`);
         }
@@ -905,14 +905,14 @@ async function runAutoTrade(): Promise<number> {
 
 async function autoFindCompetition(
   bridge: PythonBridge
-): Promise<{ id: number; title: string; status: string } | null> {
+): Promise<{ id: number; title: string; slug: string; status: string } | null> {
   // Check if already registered for a live or upcoming competition
   try {
     const regs = (await bridge.callTool("varsity.my_registrations", {})) as any;
     const items = Array.isArray(regs) ? regs : regs?.items ?? regs?.list ?? [];
     for (const reg of items) {
       if (reg.competitionStatus === "live" || reg.competitionStatus === "registration_closed") {
-        return { id: reg.competitionId, title: reg.competitionTitle, status: reg.competitionStatus };
+        return { id: reg.competitionId, title: reg.competitionTitle, slug: reg.competitionSlug ?? String(reg.competitionId), status: reg.competitionStatus };
       }
     }
   } catch {}
@@ -925,7 +925,7 @@ async function autoFindCompetition(
     const items = comps?.items ?? comps?.list ?? (Array.isArray(comps) ? comps : []);
     const best = items.find((c: any) => c.allowApiWrite !== false) ?? items[0];
     if (best) {
-      return { id: best.id, title: best.title ?? best.name, status: best.status };
+      return { id: best.id, title: best.title ?? best.name, slug: best.slug ?? String(best.id), status: best.status };
     }
   } catch {}
 
@@ -937,7 +937,7 @@ async function autoFindCompetition(
     const items = live?.items ?? live?.list ?? (Array.isArray(live) ? live : []);
     for (const c of items) {
       if (c.allowApiWrite !== false) {
-        return { id: c.id, title: c.title ?? c.name, status: c.status };
+        return { id: c.id, title: c.title ?? c.name, slug: c.slug ?? String(c.id), status: c.status };
       }
     }
   } catch {}

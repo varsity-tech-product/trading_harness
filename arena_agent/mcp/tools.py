@@ -143,7 +143,10 @@ def eligible_competitions(page: int = 1, size: int = 20):
 # ── Registration ──────────────────────────────────────────────────────────
 
 
-def register(slug: str):
+def register(slug: str = "", competition_id: int | None = None):
+    if not slug and competition_id is not None:
+        detail = varsity_tools.get_competition_detail(competition_id)
+        slug = detail.get("slug", str(competition_id)) if isinstance(detail, dict) else str(competition_id)
     return varsity_tools.register_competition(slug)
 
 
