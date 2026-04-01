@@ -63,6 +63,10 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
             )
         )
 
+    @mcp.tool(name="varsity.trade_close", description="Close current position. Works in live and settling states. Returns realizedPnl.")
+    def trade_close(competition_id: int) -> dict:
+        return to_jsonable(varsity_tools.trade_close(competition_id))
+
     @mcp.tool(name="varsity.last_transition", description="Get the last stored transition.")
     def last_transition(config_path: str | None = None) -> dict:
         return to_jsonable(tools.last_transition(config_path))
@@ -127,9 +131,9 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
 
     # ── Registration ─────────────────────────────────────────────────────
 
-    @mcp.tool(name="varsity.register", description="Register for a competition. Must be in 'registration_open' state.")
-    def register(slug: str) -> dict:
-        return tools.register(slug)
+    @mcp.tool(name="varsity.register", description="Register for a competition. Must be in 'registration_open' state. Pass slug or competition_id.")
+    def register(slug: str = "", competition_id: int | None = None) -> dict:
+        return tools.register(slug=slug, competition_id=competition_id)
 
     @mcp.tool(name="varsity.withdraw", description="Withdraw registration from a competition (before it goes live).")
     def withdraw(slug: str) -> dict:
