@@ -346,11 +346,13 @@ def _summarize_trades(trades: list[dict]) -> dict[str, Any]:
         fee = float(trade.get("fee") or trade.get("commission") or 0)
         total_fees += fee
 
-        # Hold time — API provides holdDuration in seconds directly
+        # Hold time — API provides holdDuration in milliseconds
         hold_sec = trade.get("holdDuration")
         if hold_sec is not None:
             try:
                 hold_sec = float(hold_sec)
+                if hold_sec > 1e6:
+                    hold_sec /= 1000
                 hold_times.append(hold_sec)
                 if pnl < 0 and hold_sec < 120:
                     trades_stopped_out += 1
