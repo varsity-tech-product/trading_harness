@@ -991,11 +991,8 @@ def _run_auto(argv: list[str]) -> None:
                         hs = t.get("holdDuration")
                         if hs is not None:
                             try:
-                                hs_f = float(hs)
                                 # API returns holdDuration in milliseconds
-                                if hs_f > 1e6:
-                                    hs_f /= 1000
-                                hold_secs.append(hs_f)
+                                hold_secs.append(float(hs) / 1000)
                             except (TypeError, ValueError):
                                 pass
                         else:

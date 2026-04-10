@@ -350,9 +350,7 @@ def _summarize_trades(trades: list[dict]) -> dict[str, Any]:
         hold_sec = trade.get("holdDuration")
         if hold_sec is not None:
             try:
-                hold_sec = float(hold_sec)
-                if hold_sec > 1e6:
-                    hold_sec /= 1000
+                hold_sec = float(hold_sec) / 1000
                 hold_times.append(hold_sec)
                 if pnl < 0 and hold_sec < 120:
                     trades_stopped_out += 1
