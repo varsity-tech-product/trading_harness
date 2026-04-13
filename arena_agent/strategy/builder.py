@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 from arena_agent.core.models import RiskLimits
@@ -102,6 +103,97 @@ def _normalize_params(params: dict[str, Any]) -> dict[str, Any]:
 _log = __import__("logging").getLogger(__name__)
 
 
+def _component_valid_names(cls: type) -> set[str]:
+    if dataclasses.is_dataclass(cls):
+        return {f.name for f in dataclasses.fields(cls) if f.name != "name"}
+    return set()
+
+
+def canonicalize_component_config(
+    registry: dict[str, type],
+    config: dict[str, Any] | str | None,
+    *,
+    strict: bool = True,
+) -> dict[str, Any] | None:
+    if not config:
+        return None
+    if isinstance(config, str):
+        if config.lower() == "none":
+            return None
+        config = {"type": config}
+    if not isinstance(config, dict):
+        raise ValueError(f"Strategy component config must be a dict or string, got {type(config).__name__}")
+
+    type_name = str(config.get("type", "")).lower()
+    cls = registry.get(type_name)
+    if cls is None:
+        raise ValueError(
+            f"Unknown strategy component type {type_name!r}. "
+            f"Available: {', '.join(sorted(registry.keys()))}"
+        )
+    params = _normalize_params({k: v for k, v in config.items() if k != "type"})
+    valid_names = _component_valid_names(cls)
+    if valid_names:
+        unknown = {k: v for k, v in params.items() if k not in valid_names}
+        if unknown and strict:
+            raise ValueError(
+                f"Strategy component {type_name} got unknown params {sorted(unknown.keys())}. "
+                f"Valid params: {sorted(valid_names)}"
+            )
+        params = {k: v for k, v in params.items() if k in valid_names}
+    return {"type": type_name, **params}
+
+
+def canonicalize_strategy_config(
+    config: dict[str, Any] | None,
+    *,
+    strict: bool = True,
+) -> dict[str, Any] | None:
+    if not config:
+        return None
+    if not isinstance(config, dict):
+        raise ValueError(f"Strategy config must be a dict, got {type(config).__name__}")
+
+    allowed_keys = {"sizing", "tpsl", "entry_filters", "exit_rules"}
+    unknown_keys = sorted(k for k in config.keys() if k not in allowed_keys)
+    if unknown_keys and strict:
+        raise ValueError(
+            f"Unknown strategy keys {unknown_keys}. "
+            f"Allowed keys: {sorted(allowed_keys)}"
+        )
+
+    result: dict[str, Any] = {}
+    if "sizing" in config:
+        sizing = canonicalize_component_config(_SIZERS, config.get("sizing"), strict=strict)
+        if sizing is not None:
+            result["sizing"] = sizing
+    if "tpsl" in config:
+        tpsl = canonicalize_component_config(_TPSL, config.get("tpsl"), strict=strict)
+        if tpsl is not None:
+            result["tpsl"] = tpsl
+    if "entry_filters" in config:
+        raw_filters = config.get("entry_filters") or []
+        if not isinstance(raw_filters, list):
+            raise ValueError("strategy.entry_filters must be a list")
+        clean_filters: list[dict[str, Any]] = []
+        for item in raw_filters:
+            sanitized = canonicalize_component_config(_FILTERS, item, strict=strict)
+            if sanitized is not None:
+                clean_filters.append(sanitized)
+        result["entry_filters"] = clean_filters
+    if "exit_rules" in config:
+        raw_exits = config.get("exit_rules") or []
+        if not isinstance(raw_exits, list):
+            raise ValueError("strategy.exit_rules must be a list")
+        clean_exits: list[dict[str, Any]] = []
+        for item in raw_exits:
+            sanitized = canonicalize_component_config(_EXITS, item, strict=strict)
+            if sanitized is not None:
+                clean_exits.append(sanitized)
+        result["exit_rules"] = clean_exits
+    return result
+
+
 def _build_component(registry: dict[str, type], config: dict[str, Any] | str | None) -> Any:
     if not config:
         return None
@@ -120,10 +212,8 @@ def _build_component(registry: dict[str, type], config: dict[str, Any] | str | N
     params = _normalize_params({k: v for k, v in config.items() if k != "type"})
 
     # Strip params that don't belong to this class (cross-type contamination).
-    import dataclasses
-
     if dataclasses.is_dataclass(cls):
-        valid_names = {f.name for f in dataclasses.fields(cls) if f.name != "name"}
+        valid_names = _component_valid_names(cls)
         unknown = {k: v for k, v in params.items() if k not in valid_names}
         if unknown:
             kept = {k: v for k, v in params.items() if k in valid_names}
@@ -216,13 +306,15 @@ def build_strategy_layer(
     if not config:
         return None
 
-    sizer: PositionSizer | None = _build_component(_SIZERS, config.get("sizing"))
-    tpsl: TPSLPlacer | None = _build_component(_TPSL, config.get("tpsl"))
+    canonical_config = canonicalize_strategy_config(config, strict=False) or {}
+
+    sizer: PositionSizer | None = _build_component(_SIZERS, canonical_config.get("sizing"))
+    tpsl: TPSLPlacer | None = _build_component(_TPSL, canonical_config.get("tpsl"))
     entry_filters: list[EntryFilter] = [
-        _build_component(_FILTERS, f) for f in config.get("entry_filters", [])
+        _build_component(_FILTERS, f) for f in canonical_config.get("entry_filters", [])
     ]
     exit_rules: list[ExitRule] = [
-        _build_component(_EXITS, e) for e in config.get("exit_rules", [])
+        _build_component(_EXITS, e) for e in canonical_config.get("exit_rules", [])
     ]
     entry_filters = [f for f in entry_filters if f is not None]
     exit_rules = [e for e in exit_rules if e is not None]

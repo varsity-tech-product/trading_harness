@@ -21,6 +21,30 @@ def evaluate_state_guard(
     max_feature_age_seconds: float | None = None,
     require_feature_timestamp_match: bool = True,
 ) -> StateGuardResult:
+    competition_symbol = _normalize_symbol(state.competition.symbol)
+    market_symbol = _normalize_symbol(state.market.symbol)
+    raw_market_symbol = _normalize_symbol(
+        ((state.raw or {}).get("market_info") or {}).get("symbol")
+    )
+    if competition_symbol and market_symbol and competition_symbol != market_symbol:
+        return StateGuardResult(
+            ok=False,
+            reason="market_symbol_mismatch",
+            details={
+                "competition_symbol": state.competition.symbol,
+                "market_symbol": state.market.symbol,
+            },
+        )
+    if raw_market_symbol and market_symbol and raw_market_symbol != market_symbol:
+        return StateGuardResult(
+            ok=False,
+            reason="market_info_symbol_mismatch",
+            details={
+                "market_symbol": state.market.symbol,
+                "raw_market_symbol": ((state.raw or {}).get("market_info") or {}).get("symbol"),
+            },
+        )
+
     signal_state = state.signal_state
     if not signal_state.requested:
         return StateGuardResult(ok=True)
@@ -129,3 +153,7 @@ def _position_signature(position: Any) -> tuple[Any, Any, Any]:
 def _normalize_timestamp_seconds(value: Any) -> float:
     numeric = float(value)
     return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
+
+
+def _normalize_symbol(value: Any) -> str:
+    return str(value or "").strip().upper()

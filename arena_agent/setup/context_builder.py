@@ -74,15 +74,6 @@ def build_setup_context(
     symbol = config.get("symbol", "BTCUSDT")
     interval = config.get("interval", "1m")
 
-    # --- Compact header: symbol, price, equity, position (Layer 1) ---
-    # Market summary first so we have price for the header
-    try:
-        market = _compute_market_summary(symbol, interval)
-        context["market_summary"] = market
-    except Exception as exc:
-        market = {"available": False, "error": str(exc)}
-        context["market_summary"] = market
-
     # Account state
     try:
         account = varsity_tools.get_live_account(competition_id)
@@ -142,6 +133,16 @@ def build_setup_context(
                 context["competition"]["trades_remaining"] = max(0, max_trades - trade_count)
     except Exception as exc:
         context["competition"] = {"id": competition_id, "error": str(exc)}
+
+    # --- Compact header: symbol, price, equity, position (Layer 1) ---
+    # Use the competition symbol when available so setup decisions and runtime
+    # always reason about the actual contest asset.
+    try:
+        market = _compute_market_summary(symbol, interval)
+        context["market_summary"] = market
+    except Exception as exc:
+        market = {"available": False, "error": str(exc)}
+        context["market_summary"] = market
 
     # Current config snapshot — include policy type for cooldown awareness
     policy_config = config.get("policy", {})

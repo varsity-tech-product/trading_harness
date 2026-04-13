@@ -7,6 +7,11 @@ from typing import Any, Callable
 
 import varsity_tools
 
+try:  # pragma: no cover - optional dependency contract
+    import requests
+except Exception:  # pragma: no cover - requests always available in runtime env
+    requests = None
+
 
 Validator = Callable[[Any], bool]
 
@@ -69,10 +74,16 @@ class EnvironmentAdapter:
             take_profit=take_profit,
             stop_loss=stop_loss,
             validator=_is_dict,
+            retry_policy=_retry_write_error,
         )
 
     def trade_close(self, competition_id: int) -> dict[str, Any]:
-        return self._invoke("trade_close", competition_id, validator=_is_dict)
+        return self._invoke(
+            "trade_close",
+            competition_id,
+            validator=_is_dict,
+            retry_policy=_retry_write_error,
+        )
 
     def trade_update_tpsl(
         self,
@@ -86,11 +97,20 @@ class EnvironmentAdapter:
             take_profit=take_profit,
             stop_loss=stop_loss,
             validator=_is_dict,
+            retry_policy=_retry_write_error,
         )
 
-    def _invoke(self, method_name: str, *args: Any, validator: Validator | None = None, **kwargs: Any) -> Any:
+    def _invoke(
+        self,
+        method_name: str,
+        *args: Any,
+        validator: Validator | None = None,
+        retry_policy: Callable[[Exception], bool] | None = None,
+        **kwargs: Any,
+    ) -> Any:
         method = getattr(self.client, method_name)
         last_error: Exception | None = None
+        retry_policy = retry_policy or _retry_all_errors
 
         for attempt in range(1, self.retry_attempts + 1):
             self._throttle(method_name)
@@ -101,8 +121,10 @@ class EnvironmentAdapter:
                     raise ValueError(f"{method_name} returned invalid payload: {response!r}")
                 return response
             except Exception as exc:  # pragma: no cover - exercised via fake clients
-                last_error = exc
+                last_error = _format_exception(exc, method_name)
                 if attempt == self.retry_attempts:
+                    break
+                if not retry_policy(exc):
                     break
                 time.sleep(self.retry_backoff_seconds * attempt)
 
@@ -141,3 +163,38 @@ def _raise_if_api_error(value: Any, method_name: str) -> None:
         return
     message = value.get("message") or value.get("detail") or "unknown Arena API error"
     raise RuntimeError(f"{method_name} failed with code={code}: {message}")
+
+
+def _retry_all_errors(_: Exception) -> bool:
+    return True
+
+
+def _retry_write_error(exc: Exception) -> bool:
+    if requests is not None and isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+        return True
+    response = getattr(exc, "response", None)
+    if response is None:
+        return False
+    status_code = getattr(response, "status_code", None)
+    return isinstance(status_code, int) and (status_code == 429 or status_code >= 500)
+
+
+def _format_exception(exc: Exception, method_name: str) -> Exception:
+    response = getattr(exc, "response", None)
+    if response is None:
+        return exc
+
+    status_code = getattr(response, "status_code", None)
+    detail = ""
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        detail = str(payload.get("message") or payload.get("detail") or payload)
+    else:
+        text = getattr(response, "text", "")
+        detail = str(text).strip()
+    detail = detail[:300] if detail else response.reason or ""
+    status_label = f"{status_code}" if status_code is not None else "HTTP"
+    return RuntimeError(f"{method_name} failed: {status_label} {detail}".strip())

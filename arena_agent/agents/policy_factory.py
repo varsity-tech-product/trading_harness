@@ -60,6 +60,8 @@ def build_policy(config: dict, *, runtime_config=None) -> Policy:
             entry_long=str(params.get("entry_long", "False")),
             entry_short=str(params.get("entry_short", "False")),
             exit_expr=str(params.get("exit", "False")),
+            exit_long_expr=str(params.get("exit_long", "False")),
+            exit_short_expr=str(params.get("exit_short", "False")),
             reentry_cooldown_seconds=float(params.get("reentry_cooldown_seconds", 300.0)),
         )
     if policy_type == "ensemble":
@@ -90,5 +92,7 @@ def build_policy(config: dict, *, runtime_config=None) -> Policy:
         entry_long=str(params.get("entry_long", "False")),
         entry_short=str(params.get("entry_short", "False")),
         exit_expr=str(params.get("exit", "False")),
+        exit_long_expr=str(params.get("exit_long", "False")),
+        exit_short_expr=str(params.get("exit_short", "False")),
         reentry_cooldown_seconds=float(params.get("reentry_cooldown_seconds", 300.0)),
     )

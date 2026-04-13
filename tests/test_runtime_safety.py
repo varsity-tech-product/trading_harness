@@ -14,7 +14,15 @@ from arena_agent.core.models import (
 from arena_agent.core.runtime_safety import detect_position_drift, evaluate_state_guard
 
 
-def make_state(*, feature_timestamp: int | None, position=None, trade_count: int = 1) -> AgentState:
+def make_state(
+    *,
+    feature_timestamp: int | None,
+    position=None,
+    trade_count: int = 1,
+    market_symbol: str = "BTCUSDT",
+    competition_symbol: str = "BTCUSDT",
+    raw_market_symbol: str | None = None,
+) -> AgentState:
     close_time = 2_000_000_000_000
     candles = [
         Candle(
@@ -33,7 +41,7 @@ def make_state(*, feature_timestamp: int | None, position=None, trade_count: int
     return AgentState(
         timestamp=time.time(),
         market=MarketSnapshot(
-            symbol="BTCUSDT",
+            symbol=market_symbol,
             interval="1m",
             last_price=100.5,
             mark_price=100.4,
@@ -59,7 +67,7 @@ def make_state(*, feature_timestamp: int | None, position=None, trade_count: int
         position=position,
         competition=CompetitionSnapshot(
             competition_id=4,
-            symbol="BTCUSDT",
+            symbol=competition_symbol,
             status="live",
             is_live=True,
             is_close_only=False,
@@ -68,6 +76,7 @@ def make_state(*, feature_timestamp: int | None, position=None, trade_count: int
             max_trades_remaining=40 - trade_count,
             time_remaining_seconds=600.0,
         ),
+        raw={"market_info": {"symbol": raw_market_symbol or market_symbol}},
     )
 
 
@@ -95,6 +104,31 @@ class RuntimeSafetyTest(unittest.TestCase):
         message = detect_position_drift(previous_state, current_state)
 
         self.assertIn("exchange state drift detected", message)
+
+    def test_state_guard_rejects_market_symbol_mismatch(self) -> None:
+        state = make_state(
+            feature_timestamp=2_000_000_000_000,
+            market_symbol="BTCUSDT",
+            competition_symbol="SOLUSDT",
+        )
+
+        result = evaluate_state_guard(state, max_feature_age_seconds=None)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "market_symbol_mismatch")
+
+    def test_state_guard_rejects_raw_market_symbol_mismatch(self) -> None:
+        state = make_state(
+            feature_timestamp=2_000_000_000_000,
+            market_symbol="SOLUSDT",
+            competition_symbol="SOLUSDT",
+            raw_market_symbol="BTCUSDT",
+        )
+
+        result = evaluate_state_guard(state, max_feature_age_seconds=None)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "market_info_symbol_mismatch")
 
 
 if __name__ == "__main__":

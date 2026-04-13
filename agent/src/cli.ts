@@ -64,7 +64,7 @@ import {
   tailLines,
   writeRuntimeState,
 } from "./util/runtime-state.js";
-import { executeUpdate } from "./tools/runtime-config.js";
+import { executeUpdate, syncCompetitionConfig } from "./tools/runtime-config.js";
 
 const argv = process.argv.slice(2);
 const invokedAs = basename(process.argv[1] ?? "arena-agent");
@@ -704,6 +704,23 @@ async function runAutoTrade(): Promise<number> {
       // 4. Run setup agent for initial config (before runtime start)
       const configPath = resolveUserConfigPath(home, state, optionValue("--config"), agent);
       let setupAdjustments = 0;
+      let competitionDetail: Record<string, unknown> | null = null;
+      try {
+        competitionDetail = (await bridge.callTool("varsity.competition_detail", {
+          identifier: String(competition.id),
+        })) as Record<string, unknown>;
+        const competitionSymbol =
+          typeof competitionDetail?.symbol === "string" && competitionDetail.symbol
+            ? competitionDetail.symbol
+            : "BTCUSDT";
+        syncCompetitionConfig(configPath, competition.id, competitionSymbol);
+      } catch (err) {
+        console.log(
+          `Failed to sync competition config before runtime start: ${
+            err instanceof Error ? err.message : err
+          }`
+        );
+      }
 
       if (!noSetup) {
         try {
@@ -779,6 +796,7 @@ async function runAutoTrade(): Promise<number> {
           const status = (await bridge.callTool("varsity.competition_detail", {
             identifier: String(competition.id),
           })) as any;
+          competitionDetail = status as Record<string, unknown>;
           const isLive = status?.status === "live";
           if (!isLive) {
             console.log(`Competition #${competition.id} ended (${status?.status}).`);

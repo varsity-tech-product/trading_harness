@@ -20,6 +20,7 @@ from arena_agent.agents.cli_backends import (
     _strip_markdown_fences,
     resolve_backend,
 )
+from arena_agent.strategy.builder import canonicalize_strategy_config
 
 logger = logging.getLogger("arena_agent.setup_agent")
 
@@ -367,9 +368,13 @@ def _translate_flat_decision(payload: dict[str, Any]) -> dict[str, Any]:
             # Expression policy (default) — params are string expressions
             expr_params = {}
             if isinstance(policy_params, dict):
-                for k in ("entry_long", "entry_short", "exit"):
+                for k in ("entry_long", "entry_short", "exit", "exit_long", "exit_short", "reentry_cooldown_seconds"):
                     if k in policy_params:
-                        expr_params[k] = str(policy_params[k])
+                        expr_params[k] = (
+                            float(policy_params[k])
+                            if k == "reentry_cooldown_seconds"
+                            else str(policy_params[k])
+                        )
             overrides["policy"] = {"type": "expression", "params": expr_params}
 
     # --- TP/SL (percentage-based -> fixed_pct) ---
@@ -439,6 +444,121 @@ def _translate_flat_decision(payload: dict[str, Any]) -> dict[str, Any]:
         len(overrides.get("signal_indicators", [])),
     )
     return overrides
+
+
+_ALLOWED_RUNTIME_OVERRIDE_KEYS = {
+    "policy",
+    "strategy",
+    "signal_indicators",
+    "risk_limits",
+    "_cooldown_seconds",
+    "mode",
+}
+_ALLOWED_EXPRESSION_PARAM_KEYS = {
+    "entry_long",
+    "entry_short",
+    "exit",
+    "exit_long",
+    "exit_short",
+    "reentry_cooldown_seconds",
+}
+
+
+def _sanitize_signal_indicators(raw_value: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_value, list):
+        raise ValueError("signal_indicators must be a list")
+    clean: list[dict[str, Any]] = []
+    for item in raw_value:
+        if not isinstance(item, dict) or "indicator" not in item:
+            raise ValueError("Each signal indicator must be an object with an indicator field")
+        entry: dict[str, Any] = {"indicator": str(item["indicator"])}
+        if "params" in item:
+            if not isinstance(item["params"], dict):
+                raise ValueError("signal_indicators.params must be an object")
+            entry["params"] = dict(item["params"])
+        if "key" in item and item["key"] is not None:
+            entry["key"] = str(item["key"])
+        clean.append(entry)
+    return clean
+
+
+def _sanitize_policy_override(raw_value: Any) -> dict[str, Any]:
+    if not isinstance(raw_value, dict):
+        raise ValueError("policy override must be an object")
+    policy_type = str(raw_value.get("type", "")).lower()
+    if policy_type not in {"expression", "ensemble", "hold", "tap_http"}:
+        raise ValueError(
+            f"Unsupported policy override type {policy_type!r}. "
+            "Allowed: expression, ensemble, hold, tap_http"
+        )
+
+    result: dict[str, Any] = {"type": policy_type}
+    if policy_type == "expression":
+        params = raw_value.get("params") or {}
+        if not isinstance(params, dict):
+            raise ValueError("policy.params must be an object")
+        unknown = sorted(k for k in params.keys() if k not in _ALLOWED_EXPRESSION_PARAM_KEYS)
+        if unknown:
+            raise ValueError(
+                f"Unknown expression policy params {unknown}. "
+                f"Allowed: {sorted(_ALLOWED_EXPRESSION_PARAM_KEYS)}"
+            )
+        clean_params: dict[str, Any] = {}
+        for key, value in params.items():
+            clean_params[key] = (
+                float(value) if key == "reentry_cooldown_seconds" else str(value)
+            )
+        result["params"] = clean_params
+    elif policy_type == "ensemble":
+        members = raw_value.get("members") or []
+        if not isinstance(members, list):
+            raise ValueError("policy.members must be a list")
+        result["members"] = [_sanitize_policy_override(member) for member in members]
+    elif policy_type == "tap_http":
+        for key in ("endpoint", "timeout_seconds", "headers", "fail_open_to_hold"):
+            if key in raw_value:
+                result[key] = raw_value[key]
+
+    if "indicator_mode" in raw_value:
+        result["indicator_mode"] = str(raw_value["indicator_mode"])
+    return result
+
+
+def _sanitize_runtime_overrides(overrides: dict[str, Any]) -> dict[str, Any]:
+    unknown_top_level = sorted(k for k in overrides.keys() if k not in _ALLOWED_RUNTIME_OVERRIDE_KEYS)
+    if unknown_top_level:
+        raise ValueError(
+            f"Unsupported override keys {unknown_top_level}. "
+            f"Allowed: {sorted(_ALLOWED_RUNTIME_OVERRIDE_KEYS)}"
+        )
+
+    clean: dict[str, Any] = {}
+    if "policy" in overrides:
+        clean["policy"] = _sanitize_policy_override(overrides["policy"])
+    if "strategy" in overrides:
+        strategy = canonicalize_strategy_config(overrides["strategy"], strict=True)
+        if strategy:
+            clean["strategy"] = strategy
+    if "signal_indicators" in overrides:
+        clean["signal_indicators"] = _sanitize_signal_indicators(overrides["signal_indicators"])
+    if "risk_limits" in overrides:
+        risk_limits = overrides["risk_limits"]
+        if not isinstance(risk_limits, dict):
+            raise ValueError("risk_limits override must be an object")
+        clean_risk: dict[str, Any] = {}
+        if "max_absolute_size" in risk_limits:
+            value = risk_limits["max_absolute_size"]
+            clean_risk["max_absolute_size"] = None if value is None else float(value)
+        if clean_risk:
+            clean["risk_limits"] = clean_risk
+    if "_cooldown_seconds" in overrides:
+        clean["_cooldown_seconds"] = max(60, min(3600, int(overrides["_cooldown_seconds"])))
+    if "mode" in overrides:
+        mode = str(overrides["mode"]).lower()
+        if mode not in ("rule_based", "discretionary"):
+            raise ValueError("mode override must be rule_based or discretionary")
+        clean["mode"] = mode
+    return clean
 
 
 class SetupAgent:
@@ -689,7 +809,9 @@ class SetupAgent:
         entry_long = params.get("entry_long", "")
         entry_short = params.get("entry_short", "")
         exit_expr = params.get("exit", "")
-        if not entry_long or not entry_short or not exit_expr:
+        exit_long = params.get("exit_long", "") or exit_expr
+        exit_short = params.get("exit_short", "") or exit_expr
+        if not entry_long or not entry_short or (not exit_long and not exit_short):
             return None
 
         # Build namespace from current indicator values
@@ -704,14 +826,14 @@ class SetupAgent:
             ns.setdefault("close", mkt["current_price"])
 
         overlaps = []
-        if _safe_eval(entry_long, ns) and _safe_eval(exit_expr, ns):
+        if exit_long and _safe_eval(entry_long, ns) and _safe_eval(exit_long, ns):
             overlaps.append(
-                f"entry_long '{entry_long}' and exit '{exit_expr}' both TRUE "
+                f"entry_long '{entry_long}' and exit_long '{exit_long}' both TRUE "
                 f"at current values — longs will close immediately"
             )
-        if _safe_eval(entry_short, ns) and _safe_eval(exit_expr, ns):
+        if exit_short and _safe_eval(entry_short, ns) and _safe_eval(exit_short, ns):
             overlaps.append(
-                f"entry_short '{entry_short}' and exit '{exit_expr}' both TRUE "
+                f"entry_short '{entry_short}' and exit_short '{exit_short}' both TRUE "
                 f"at current values — shorts will close immediately"
             )
         return "; ".join(overlaps) if overlaps else None
@@ -1071,15 +1193,12 @@ class SetupAgent:
 
         if action == "update" and uses_flat:
             logger.info("_parse_decision: using FLAT schema path (policy=%s)", payload.get("policy"))
-            overrides = _translate_flat_decision(payload)
-            # Only flag restart when the policy TYPE is present in overrides.
-            # TP/SL/sizing tweaks are applied via deep_merge without restarting.
-            restart = isinstance(overrides.get("policy"), dict) and "type" in overrides.get("policy", {})
+            overrides = _sanitize_runtime_overrides(_translate_flat_decision(payload))
+            restart = bool(overrides)
         elif action == "update" and uses_legacy:
             logger.info("_parse_decision: using LEGACY overrides path (keys=%s)", list(payload["overrides"].keys()))
-            overrides = payload["overrides"]
-            overrides = _clamp_sizing_params(overrides)
-            restart = bool(payload.get("restart_runtime", False))
+            overrides = _sanitize_runtime_overrides(_clamp_sizing_params(payload["overrides"]))
+            restart = bool(overrides)
         else:
             overrides = None
             restart = bool(payload.get("restart_runtime", False))

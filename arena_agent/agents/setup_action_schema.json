@@ -43,8 +43,8 @@
     },
     "policy": {
       "type": "string",
-      "enum": ["ma_crossover", "rsi_mean_reversion", "channel_breakout", "ensemble"],
-      "description": "Rule-based policy to use. The runtime executes this deterministically — no per-tick LLM calls."
+      "enum": ["expression", "ensemble"],
+      "description": "Rule-based policy to use. 'expression' uses directional entry/exit expressions; 'ensemble' runs multiple expression members."
     },
     "policy_params": {
       "type": "object",

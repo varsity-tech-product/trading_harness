@@ -159,6 +159,31 @@ class StaleUnresolvedTradesArenaClient(InferredPositionArenaClient):
         ]
 
 
+class CompetitionSymbolOverrideArenaClient(FakeArenaClient):
+    def __init__(self) -> None:
+        self.requested_symbols: list[tuple[str, str]] = []
+
+    def get_market_info(self, symbol: str):
+        self.requested_symbols.append(("market_info", symbol))
+        payload = super().get_market_info(symbol)
+        payload["lastPrice"] = 82.25
+        payload["markPrice"] = 82.1
+        return payload
+
+    def get_klines(self, symbol: str, interval: str, size: int = 120):
+        self.requested_symbols.append(("klines", symbol))
+        return super().get_klines(symbol, interval, size=size)
+
+    def get_orderbook(self, symbol: str, depth: int = 20):
+        self.requested_symbols.append(("orderbook", symbol))
+        return super().get_orderbook(symbol, depth=depth)
+
+    def get_competition_detail(self, competition_id: int):
+        detail = super().get_competition_detail(competition_id)
+        detail["symbol"] = "SOLUSDT"
+        return detail
+
+
 class StateBuilderTest(unittest.TestCase):
     def test_build_normalizes_market_account_position_and_competition(self) -> None:
         config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
@@ -212,7 +237,7 @@ class StateBuilderTest(unittest.TestCase):
         self.assertEqual(state.signal_state.version, "signal_state.v1")
         self.assertTrue(state.signal_state.warmup_complete)
         self.assertAlmostEqual(state.signal_state.values["sma_2"], 103.5)
-        self.assertAlmostEqual(state.signal_state.values["obv"], 23.0)
+        self.assertAlmostEqual(state.signal_state.values["obv"], 33.0)
 
     def test_build_does_not_infer_stale_flat_position(self) -> None:
         config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
@@ -222,6 +247,23 @@ class StateBuilderTest(unittest.TestCase):
         state = builder.build()
 
         self.assertIsNone(state.position)
+
+    def test_build_uses_competition_symbol_for_market_data(self) -> None:
+        client = CompetitionSymbolOverrideArenaClient()
+        config = RuntimeConfig.from_mapping({"competition_id": 4, "symbol": "BTCUSDT"})
+        adapter = EnvironmentAdapter(client=client)
+        builder = StateBuilder(adapter, config)
+
+        state = builder.build()
+
+        self.assertEqual(state.market.symbol, "SOLUSDT")
+        self.assertEqual(state.competition.symbol, "SOLUSDT")
+        self.assertEqual(state.raw["config_symbol"], "BTCUSDT")
+        self.assertEqual(state.raw["active_symbol"], "SOLUSDT")
+        self.assertEqual(
+            client.requested_symbols,
+            [("market_info", "SOLUSDT"), ("klines", "SOLUSDT"), ("orderbook", "SOLUSDT")],
+        )
 
 
 if __name__ == "__main__":

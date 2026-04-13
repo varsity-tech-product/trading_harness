@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { readFileSync, writeFileSync } from "node:fs";
+import { extname, join, basename, dirname } from "node:path";
 import { parse, stringify } from "yaml";
 import { findConfigPath } from "./runtime-start.js";
 
@@ -67,6 +68,15 @@ export const updateInputSchema = z.object({
 
 /** Fields agents must not change (tied to competition or infrastructure). */
 const PROTECTED_FIELDS = new Set(["symbol", "competition_id"]);
+const ATOMIC_REPLACE_PATHS = new Set([
+  "policy.params",
+  "policy.members",
+  "signal_indicators",
+  "strategy.sizing",
+  "strategy.tpsl",
+  "strategy.entry_filters",
+  "strategy.exit_rules",
+]);
 
 export function executeUpdate(
   args: z.infer<typeof updateInputSchema>,
@@ -92,13 +102,44 @@ export function executeUpdate(
   return { config_path: configPath, updated_fields: updatedFields, config };
 }
 
+export function syncCompetitionConfig(
+  configPath: string,
+  competitionId: number,
+  symbol: string
+): { config_path: string; updated_fields: string[]; config: Record<string, unknown> } {
+  const content = readFileSync(configPath, "utf-8");
+  const config = parse(content) as Record<string, unknown>;
+  const updatedFields: string[] = [];
+
+  if (config.competition_id !== competitionId) {
+    config.competition_id = competitionId;
+    updatedFields.push("competition_id");
+  }
+  if (config.symbol !== symbol) {
+    config.symbol = symbol;
+    updatedFields.push("symbol");
+  }
+
+  ensureCompetitionScopedStorage(config, competitionId, updatedFields);
+  if (updatedFields.length > 0) {
+    writeFileSync(configPath, stringify(config, { indent: 2 }), "utf-8");
+  }
+  return { config_path: configPath, updated_fields: updatedFields, config };
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function deepMerge(
   target: Record<string, unknown>,
-  source: Record<string, unknown>
+  source: Record<string, unknown>,
+  path = ""
 ): void {
   for (const [key, value] of Object.entries(source)) {
+    const currentPath = path ? `${path}.${key}` : key;
+    if (ATOMIC_REPLACE_PATHS.has(currentPath)) {
+      target[key] = value;
+      continue;
+    }
     if (
       value !== null &&
       typeof value === "object" &&
@@ -109,12 +150,53 @@ function deepMerge(
     ) {
       deepMerge(
         target[key] as Record<string, unknown>,
-        value as Record<string, unknown>
+        value as Record<string, unknown>,
+        currentPath,
       );
     } else {
       target[key] = value;
     }
   }
+}
+
+function ensureCompetitionScopedStorage(
+  config: Record<string, unknown>,
+  competitionId: number,
+  updatedFields: string[]
+): void {
+  const storage = ensureObject(config, "storage");
+  for (const field of ["transition_path", "journal_path"] as const) {
+    const current = storage[field];
+    if (typeof current !== "string" || !current.trim()) {
+      continue;
+    }
+    const nextValue = withCompetitionSuffix(current, competitionId);
+    if (nextValue !== current) {
+      storage[field] = nextValue;
+      updatedFields.push(`storage.${field}`);
+    }
+  }
+}
+
+function withCompetitionSuffix(path: string, competitionId: number): string {
+  const preserveDotPrefix = path.startsWith("./");
+  const suffix = extname(path);
+  const filename = basename(path, suffix).replace(/-c\d+$/, "");
+  const scoped = join(dirname(path), `${filename}-c${competitionId}${suffix}`);
+  return preserveDotPrefix && !scoped.startsWith("./") ? `./${scoped}` : scoped;
+}
+
+function ensureObject(
+  target: Record<string, unknown>,
+  key: string
+): Record<string, unknown> {
+  const value = target[key];
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  const created: Record<string, unknown> = {};
+  target[key] = created;
+  return created;
 }
 
 function collectKeys(obj: Record<string, unknown>, prefix = ""): string[] {

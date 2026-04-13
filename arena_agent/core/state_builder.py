@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import statistics
 import time
@@ -19,6 +20,8 @@ from arena_agent.core.models import (
 )
 from arena_agent.features.engine import FeatureEngine, compute_kline_limit, resolve_indicator_specs
 from arena_agent.features.registry import feature_key
+
+logger = logging.getLogger("arena_agent.state_builder")
 
 
 class StateBuilder:
@@ -68,20 +71,32 @@ class StateBuilder:
         return added
 
     def build(self) -> AgentState:
-        market_info = self.adapter.get_market_info(self.config.symbol)
+        competition = self.adapter.get_competition_detail(self.config.competition_id)
+        competition_symbol = _normalize_symbol(
+            competition.get("symbol") or competition.get("matchInfo", {}).get("symbol")
+        )
+        active_symbol = competition_symbol or self.config.symbol
+        if competition_symbol and competition_symbol != _normalize_symbol(self.config.symbol):
+            logger.warning(
+                "Competition symbol %s overrides runtime config symbol %s for competition %s",
+                competition_symbol,
+                self.config.symbol,
+                self.config.competition_id,
+            )
+
+        market_info = self.adapter.get_market_info(active_symbol)
         klines_payload = self.adapter.get_klines(
-            self.config.symbol,
+            active_symbol,
             self.config.interval,
             self._kline_limit,
         )
-        orderbook = self.adapter.get_orderbook(self.config.symbol, self.config.orderbook_depth)
+        orderbook = self.adapter.get_orderbook(active_symbol, self.config.orderbook_depth)
         account = self.adapter.get_live_account(self.config.competition_id)
         position = self.adapter.get_live_position(self.config.competition_id)
         trades = self.adapter.get_trade_history(self.config.competition_id)
-        competition = self.adapter.get_competition_detail(self.config.competition_id)
 
         candles = self._parse_candles(klines_payload)
-        market_snapshot = self._build_market_snapshot(market_info, orderbook, candles)
+        market_snapshot = self._build_market_snapshot(active_symbol, market_info, orderbook, candles)
         signal_state = self.feature_engine.compute(candles)
         # Cache latest indicator values and track rolling min/max for setup agent
         if hasattr(signal_state, "values") and isinstance(signal_state.values, dict):
@@ -118,6 +133,8 @@ class StateBuilder:
             position=position_snapshot,
             competition=competition_snapshot,
             raw={
+                "config_symbol": self.config.symbol,
+                "active_symbol": active_symbol,
                 "market_info": market_info,
                 "orderbook": orderbook,
                 "account": account,
@@ -129,6 +146,7 @@ class StateBuilder:
 
     def _build_market_snapshot(
         self,
+        symbol: str,
         market_info: dict[str, Any],
         orderbook: dict[str, Any],
         candles: list[Candle],
@@ -137,7 +155,7 @@ class StateBuilder:
         last_price = _float(market_info.get("lastPrice"), default=closes[-1] if closes else 0.0)
         mark_price = _optional_float(market_info.get("markPrice"))
         return MarketSnapshot(
-            symbol=self.config.symbol,
+            symbol=symbol,
             interval=self.config.interval,
             last_price=last_price,
             mark_price=mark_price,
@@ -404,3 +422,7 @@ def _trade_is_recent(trade: dict[str, Any], *, recent_seconds: int = 900) -> boo
         return (time.time() - (float(open_time) / 1000.0)) <= recent_seconds
     except (TypeError, ValueError):
         return False
+
+
+def _normalize_symbol(value: Any) -> str:
+    return str(value or "").strip().upper()

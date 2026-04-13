@@ -127,6 +127,8 @@ class ExpressionPolicy(Policy):
     entry_long: str = "False"
     entry_short: str = "False"
     exit_expr: str = "False"
+    exit_long_expr: str = ""
+    exit_short_expr: str = ""
     reentry_cooldown_seconds: float = 300.0
     name: str = "expression"
 
@@ -144,6 +146,8 @@ class ExpressionPolicy(Policy):
             ("entry_long", self.entry_long),
             ("entry_short", self.entry_short),
             ("exit", self.exit_expr),
+            ("exit_long", self.exit_long_expr),
+            ("exit_short", self.exit_short_expr),
         ]:
             error = _validate_expression(expr)
             if error:
@@ -185,6 +189,8 @@ class ExpressionPolicy(Policy):
                 ("entry_long", self.entry_long),
                 ("entry_short", self.entry_short),
                 ("exit", self.exit_expr),
+                ("exit_long", self.exit_long_expr),
+                ("exit_short", self.exit_short_expr),
             ]:
                 vars_used = _extract_variables(expr)
                 undefined = vars_used - ns_keys
@@ -203,17 +209,19 @@ class ExpressionPolicy(Policy):
             # Check exit/entry overlap — if entry and exit both fire on the SAME
             # namespace values, positions will close immediately after opening.
             if not self._validation_errors:
-                if _safe_eval(self.entry_short, ns) and _safe_eval(self.exit_expr, ns):
+                long_exit = self.exit_long_expr if self.exit_long_expr.strip() else self.exit_expr
+                short_exit = self.exit_short_expr if self.exit_short_expr.strip() else self.exit_expr
+                if _safe_eval(self.entry_short, ns) and _safe_eval(short_exit, ns):
                     self._validation_errors["exit_overlap_short"] = (
-                        f"exit '{self.exit_expr}' is TRUE right now while entry_short '{self.entry_short}' is also TRUE. "
+                        f"exit_short '{short_exit}' is TRUE right now while entry_short '{self.entry_short}' is also TRUE. "
                         f"Short positions will close immediately after opening. "
                         f"Fix: exit threshold must be between entry_long and entry_short thresholds "
                         f"(e.g. if entry_short is rsi > 60, exit should be rsi < 50, not rsi > 50)."
                     )
                     self._logger.warning("Exit/entry_short overlap — both true at current values, shorts will close immediately")
-                if _safe_eval(self.entry_long, ns) and _safe_eval(self.exit_expr, ns):
+                if _safe_eval(self.entry_long, ns) and _safe_eval(long_exit, ns):
                     self._validation_errors["exit_overlap_long"] = (
-                        f"exit '{self.exit_expr}' is TRUE right now while entry_long '{self.entry_long}' is also TRUE. "
+                        f"exit_long '{long_exit}' is TRUE right now while entry_long '{self.entry_long}' is also TRUE. "
                         f"Long positions will close immediately after opening. "
                         f"Fix: exit threshold must be between entry_long and entry_short thresholds."
                     )
@@ -227,11 +235,16 @@ class ExpressionPolicy(Policy):
 
         if has_position:
             # Check exit condition
-            if _safe_eval(self.exit_expr, ns):
+            active_exit_expr = self.exit_expr
+            if state.position.direction == "long" and self.exit_long_expr.strip():
+                active_exit_expr = self.exit_long_expr
+            elif state.position.direction == "short" and self.exit_short_expr.strip():
+                active_exit_expr = self.exit_short_expr
+            if _safe_eval(active_exit_expr, ns):
                 self._last_close_time = time.time()
                 return Action(
                     type=ActionType.CLOSE_POSITION,
-                    metadata={"reason": f"exit expression: {self.exit_expr}"},
+                    metadata={"reason": f"exit expression: {active_exit_expr}"},
                 )
             return Action.hold(reason="expression_no_exit_signal")
         else:
