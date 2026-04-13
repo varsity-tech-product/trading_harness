@@ -108,6 +108,19 @@ describe("mergeArenaMcpServer", () => {
     expect(arena?.env?.ARENA_ROOT).toBe(arenaRoot);
   });
 
+  it("adds VARSITY_BASE_URL when provided", () => {
+    const result = mergeArenaMcpServer(
+      null,
+      "/arena",
+      "https://api.varsity.lol/v1"
+    );
+    const arena = result.plugins?.entries?.acpx?.config?.mcpServers?.arena;
+    expect(arena?.env).toEqual({
+      ARENA_ROOT: "/arena",
+      VARSITY_BASE_URL: "https://api.varsity.lol/v1",
+    });
+  });
+
   it("does not mutate the input config", () => {
     const existing: OpenClawGlobalConfig = {
       acp: { backend: "old" },
@@ -210,5 +223,16 @@ describe("mergeCodexToml", () => {
   it("never contains VARSITY_API_KEY", () => {
     const result = mergeCodexToml("", "/arena");
     expect(result).not.toContain("VARSITY_API_KEY");
+  });
+
+  it("adds VARSITY_BASE_URL to the arena env section when provided", () => {
+    const result = mergeCodexToml(
+      "",
+      "/arena",
+      { baseUrl: "https://api.varsity.lol/v1" }
+    );
+    expect(result).toContain(
+      'VARSITY_BASE_URL = "https://api.varsity.lol/v1"'
+    );
   });
 });

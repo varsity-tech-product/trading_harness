@@ -57,7 +57,7 @@ export function writeOpenClawGlobalConfig(config: OpenClawGlobalConfig): void {
 
 /**
  * Pure function: merges arena MCP server entry into an OpenClaw global config.
- * Never includes VARSITY_API_KEY — only ARENA_ROOT.
+ * Never includes VARSITY_API_KEY — only ARENA_ROOT and optional VARSITY_BASE_URL.
  *
  * Additive only — never overwrites existing user settings:
  * - acp.backend is only set when absent (user may prefer a different backend)
@@ -66,9 +66,14 @@ export function writeOpenClawGlobalConfig(config: OpenClawGlobalConfig): void {
  */
 export function mergeArenaMcpServer(
   existing: OpenClawGlobalConfig | null,
-  arenaRoot: string
+  arenaRoot: string,
+  baseUrl?: string
 ): OpenClawGlobalConfig {
   const config: OpenClawGlobalConfig = existing ? structuredClone(existing) : {};
+  const env: Record<string, string> = { ARENA_ROOT: arenaRoot };
+  if (baseUrl) {
+    env.VARSITY_BASE_URL = baseUrl;
+  }
 
   // Set acp.backend only if not already configured
   if (!config.acp) config.acp = {};
@@ -92,7 +97,7 @@ export function mergeArenaMcpServer(
   config.plugins.entries.acpx.config.mcpServers.arena = {
     command: "arena-mcp",
     args: ["serve"],
-    env: { ARENA_ROOT: arenaRoot },
+    env,
   };
 
   return config;

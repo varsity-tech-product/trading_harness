@@ -35,6 +35,7 @@ import {
   commandAvailable,
 } from "./setup/bootstrap-python.js";
 import { buildChildEnv, loadEnvFile } from "./util/env.js";
+import { resolveBaseUrlOverride } from "./util/base-url.js";
 import {
   DEFAULT_MONITOR_PORT,
   DEFAULT_PYTHON_INSTALL_SOURCE,
@@ -108,6 +109,13 @@ async function main(): Promise<void> {
 
     const root = resolveConfiguredHome(optionValue("--home"));
     const mode = optionValue("--mode") ?? (clientName === "openclaw" ? "cli" : undefined);
+    const rootEnv = loadEnvFile(root);
+    // `--env` is an internal developer convenience flag. Keep it undocumented.
+    const baseUrl = resolveBaseUrlOverride({
+      baseUrlOption: optionValue("--base-url"),
+      envOption: optionValue("--env"),
+      fallbackBaseUrl: rootEnv.VARSITY_BASE_URL,
+    });
 
     // OpenClaw MCP mode: warn about global config mutation and require confirmation
     if (clientName === "openclaw" && mode === "mcp" && !hasFlag("--non-interactive")) {
@@ -140,7 +148,14 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const configPath = setupFn(root, mode ? { mode } : undefined);
+    const setupOptions =
+      mode || baseUrl
+        ? {
+            ...(mode ? { mode } : {}),
+            ...(baseUrl ? { baseUrl } : {}),
+          }
+        : undefined;
+    const configPath = setupFn(root, setupOptions);
 
     // Save openclawMode to ArenaHomeState if applicable
     if (clientName === "openclaw" && mode) {
@@ -267,6 +282,11 @@ async function initManagedHome(): Promise<void> {
     optionValue("--python-source") ??
     existingState?.pythonInstallSource ??
     DEFAULT_PYTHON_INSTALL_SOURCE;
+  const baseUrl = resolveBaseUrlOverride({
+    baseUrlOption: optionValue("--base-url"),
+    envOption: optionValue("--env"),
+    fallbackBaseUrl: existingEnv.VARSITY_BASE_URL,
+  });
 
   if (!hasFlag("--non-interactive")) {
     const rl = createInterface({ input, output });
@@ -321,9 +341,9 @@ async function initManagedHome(): Promise<void> {
     liveTrading,
     pythonInstallSource,
   });
-  writeArenaEnvFile(home, apiKey);
+  writeArenaEnvFile(home, apiKey, baseUrl);
   writeManagedConfigs(home, state, { overwrite: true });
-  writeMcpConfig(home);
+  writeMcpConfig(home, { baseUrl });
   writeArenaHomeState(home, state);
 
   console.log("\nBootstrapping Python runtime...");
@@ -340,7 +360,9 @@ async function initManagedHome(): Promise<void> {
   }
 
   // Auto-wire MCP tools for the chosen agent backend
-  const wired = autoWireMcpForAgent(home, agent, availableCliBackends);
+  const wired = autoWireMcpForAgent(home, agent, availableCliBackends, {
+    baseUrl,
+  });
   if (wired.length > 0) {
     console.log("\nMCP tools auto-wired:");
     for (const entry of wired) {

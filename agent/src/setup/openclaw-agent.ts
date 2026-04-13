@@ -21,7 +21,14 @@ export function ensureOpenClawTradingAgent(home: string): void {
  * Return setup instructions for users who want MCP tools available inside
  * their OpenClaw agent. This is printed during init — never auto-applied.
  */
-export function openclawMcpInstructions(home: string): string {
+export function openclawMcpInstructions(
+  home: string,
+  baseUrl?: string
+): string {
+  const env = {
+    ARENA_ROOT: home,
+    ...(baseUrl ? { VARSITY_BASE_URL: baseUrl } : {}),
+  };
   return [
     "",
     "To give your OpenClaw agent access to Arena MCP tools (optional):",
@@ -31,7 +38,7 @@ export function openclawMcpInstructions(home: string): string {
     '  "arena": {',
     '    "command": "arena-mcp",',
     '    "args": ["serve"],',
-    `    "env": { "ARENA_ROOT": "${home}" }`,
+    `    "env": ${JSON.stringify(env)}`,
     "  }",
     "",
     "Make sure acpx plugin is enabled (plugins.entries.acpx.enabled = true)",

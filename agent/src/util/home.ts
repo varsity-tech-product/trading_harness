@@ -157,15 +157,22 @@ export function mcpConfigPath(home: string): string {
   return resolve(home, ".mcp.json");
 }
 
-export function writeMcpConfig(home: string): void {
+export function writeMcpConfig(
+  home: string,
+  options: { baseUrl?: string } = {}
+): void {
   ensureArenaHomeDirectories(home);
+  const env: Record<string, string> = { ARENA_HOME: home };
+  if (options.baseUrl) {
+    env.VARSITY_BASE_URL = options.baseUrl;
+  }
   const config = {
     mcpServers: {
       arena: {
         type: "stdio",
         command: "arena-mcp",
         args: ["serve"],
-        env: { ARENA_HOME: home },
+        env,
       },
     },
   };
@@ -176,11 +183,19 @@ export function writeMcpConfig(home: string): void {
   );
 }
 
-export function writeArenaEnvFile(home: string, apiKey: string): void {
+export function writeArenaEnvFile(
+  home: string,
+  apiKey: string,
+  baseUrl?: string
+): void {
   ensureArenaHomeDirectories(home);
+  const lines = [`VARSITY_API_KEY=${apiKey.trim()}`];
+  if (baseUrl) {
+    lines.push(`VARSITY_BASE_URL=${baseUrl.trim()}`);
+  }
   writeFileSync(
     envFilePath(home),
-    `VARSITY_API_KEY=${apiKey.trim()}\n`,
+    lines.join("\n") + "\n",
     "utf-8"
   );
 }

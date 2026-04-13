@@ -14,59 +14,95 @@ interface McpServerEntry {
   env?: Record<string, string>;
 }
 
+export interface ClientSetupOptions {
+  mode?: string;
+  baseUrl?: string;
+}
+
 // ── Shared MCP server snippet ────────────────────────────────────────
 
-function arenaServerJson(arenaRoot: string, includeType = false): string {
+function arenaServerEnv(
+  arenaRoot: string,
+  baseUrl?: string
+): Record<string, string> {
+  const env: Record<string, string> = { ARENA_ROOT: arenaRoot };
+  if (baseUrl) {
+    env.VARSITY_BASE_URL = baseUrl;
+  }
+  return env;
+}
+
+function tomlEscape(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function arenaServerJson(
+  arenaRoot: string,
+  baseUrl?: string,
+  includeType = false
+): string {
   const entry: Record<string, unknown> = {
     command: "arena-mcp",
     args: ["serve"],
-    env: { ARENA_ROOT: arenaRoot },
+    env: arenaServerEnv(arenaRoot, baseUrl),
   };
   if (includeType) entry.type = "stdio";
   return JSON.stringify(entry, null, 4);
 }
 
-function arenaServerToml(arenaRoot: string): string {
-  const escaped = arenaRoot.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return [
+function arenaServerToml(arenaRoot: string, baseUrl?: string): string {
+  const lines = [
     "[mcp_servers.arena]",
     'command = "arena-mcp"',
     'args = ["serve"]',
     "",
     "[mcp_servers.arena.env]",
-    `ARENA_ROOT = "${escaped}"`,
-  ].join("\n");
+    `ARENA_ROOT = "${tomlEscape(arenaRoot)}"`,
+  ];
+  if (baseUrl) {
+    lines.push(`VARSITY_BASE_URL = "${tomlEscape(baseUrl)}"`);
+  }
+  return lines.join("\n");
 }
 
 // ── Project-local .mcp.json (safe — inside the arena project dir) ────
 
-export function setupClaudeCode(arenaRoot: string): string {
+export function setupClaudeCode(
+  arenaRoot: string,
+  options?: ClientSetupOptions
+): string {
   const configPath = resolve(arenaRoot, ".mcp.json");
   mergeConfig(configPath, "arena", {
     type: "stdio",
     command: "arena-mcp",
     args: ["serve"],
-    env: { ARENA_ROOT: arenaRoot },
+    env: arenaServerEnv(arenaRoot, options?.baseUrl),
   });
   return configPath;
 }
 
 // ── Instructions generators (never modify user config) ───────────────
 
-function claudeCodeInstructions(arenaRoot: string): string {
+function claudeCodeInstructions(
+  arenaRoot: string,
+  baseUrl?: string
+): string {
   return [
     "",
     "To add Arena MCP tools to Claude Code, add to ~/.claude.json:",
     "",
     '  "mcpServers": {',
-    `    "arena": ${arenaServerJson(arenaRoot, true).split("\n").join("\n    ")}`,
+    `    "arena": ${arenaServerJson(arenaRoot, baseUrl, true).split("\n").join("\n    ")}`,
     "  }",
     "",
     "Or run: claude mcp add arena -- arena-mcp serve",
   ].join("\n");
 }
 
-function claudeDesktopInstructions(arenaRoot: string): string {
+function claudeDesktopInstructions(
+  arenaRoot: string,
+  baseUrl?: string
+): string {
   const platform = process.platform;
   const configPath =
     platform === "darwin"
@@ -77,66 +113,81 @@ function claudeDesktopInstructions(arenaRoot: string): string {
     `To add Arena MCP tools to Claude Desktop, add to ${configPath}:`,
     "",
     '  "mcpServers": {',
-    `    "arena": ${arenaServerJson(arenaRoot).split("\n").join("\n    ")}`,
+    `    "arena": ${arenaServerJson(arenaRoot, baseUrl).split("\n").join("\n    ")}`,
     "  }",
   ].join("\n");
 }
 
-function geminiInstructions(arenaRoot: string): string {
+function geminiInstructions(arenaRoot: string, baseUrl?: string): string {
   return [
     "",
     "To add Arena MCP tools to Gemini CLI, add to ~/.gemini/settings.json:",
     "",
     '  "mcpServers": {',
-    `    "arena": ${arenaServerJson(arenaRoot).split("\n").join("\n    ")}`,
+    `    "arena": ${arenaServerJson(arenaRoot, baseUrl).split("\n").join("\n    ")}`,
     "  }",
   ].join("\n");
 }
 
-function codexInstructions(arenaRoot: string): string {
+function codexInstructions(arenaRoot: string, baseUrl?: string): string {
   return [
     "",
     "To add Arena MCP tools to Codex CLI, add to ~/.codex/config.toml:",
     "",
-    arenaServerToml(arenaRoot),
+    arenaServerToml(arenaRoot, baseUrl),
   ].join("\n");
 }
 
-function cursorInstructions(arenaRoot: string): string {
+function cursorInstructions(arenaRoot: string, baseUrl?: string): string {
   return [
     "",
     `To add Arena MCP tools to Cursor, add to ${arenaRoot}/.cursor/mcp.json:`,
     "",
     '  "mcpServers": {',
-    `    "arena": ${arenaServerJson(arenaRoot).split("\n").join("\n    ")}`,
+    `    "arena": ${arenaServerJson(arenaRoot, baseUrl).split("\n").join("\n    ")}`,
     "  }",
   ].join("\n");
 }
 
 // ── Setup functions (print instructions, never auto-modify) ──────────
 
-export function setupClaudeCodeUser(arenaRoot: string): string {
-  console.log(claudeCodeInstructions(arenaRoot));
+export function setupClaudeCodeUser(
+  arenaRoot: string,
+  options?: ClientSetupOptions
+): string {
+  console.log(claudeCodeInstructions(arenaRoot, options?.baseUrl));
   return "(see instructions above)";
 }
 
-export function setupClaudeDesktop(arenaRoot: string): string {
-  console.log(claudeDesktopInstructions(arenaRoot));
+export function setupClaudeDesktop(
+  arenaRoot: string,
+  options?: ClientSetupOptions
+): string {
+  console.log(claudeDesktopInstructions(arenaRoot, options?.baseUrl));
   return "(see instructions above)";
 }
 
-export function setupCursor(arenaRoot: string): string {
-  console.log(cursorInstructions(arenaRoot));
+export function setupCursor(
+  arenaRoot: string,
+  options?: ClientSetupOptions
+): string {
+  console.log(cursorInstructions(arenaRoot, options?.baseUrl));
   return "(see instructions above)";
 }
 
-export function setupGemini(arenaRoot: string): string {
-  console.log(geminiInstructions(arenaRoot));
+export function setupGemini(
+  arenaRoot: string,
+  options?: ClientSetupOptions
+): string {
+  console.log(geminiInstructions(arenaRoot, options?.baseUrl));
   return "(see instructions above)";
 }
 
-export function setupCodex(arenaRoot: string): string {
-  console.log(codexInstructions(arenaRoot));
+export function setupCodex(
+  arenaRoot: string,
+  options?: ClientSetupOptions
+): string {
+  console.log(codexInstructions(arenaRoot, options?.baseUrl));
   return "(see instructions above)";
 }
 
@@ -144,7 +195,11 @@ export function setupCodex(arenaRoot: string): string {
  * Pure function: merge arena MCP server into Codex config.toml content.
  * Kept for tests and manual `arena-agent setup --apply` future use.
  */
-export function mergeCodexToml(content: string, arenaRoot: string): string {
+export function mergeCodexToml(
+  content: string,
+  arenaRoot: string,
+  options?: ClientSetupOptions
+): string {
   const lines = content.split("\n");
   const filtered: string[] = [];
   let inArenaSection = false;
@@ -165,17 +220,7 @@ export function mergeCodexToml(content: string, arenaRoot: string): string {
   }
 
   const base = filtered.length > 0 ? filtered.join("\n") + "\n" : "";
-  const escaped = arenaRoot.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const section = [
-    "",
-    "[mcp_servers.arena]",
-    'command = "arena-mcp"',
-    'args = ["serve"]',
-    "",
-    "[mcp_servers.arena.env]",
-    `ARENA_ROOT = "${escaped}"`,
-    "",
-  ].join("\n");
+  const section = "\n" + arenaServerToml(arenaRoot, options?.baseUrl) + "\n";
 
   return base + section;
 }
@@ -184,13 +229,13 @@ export function mergeCodexToml(content: string, arenaRoot: string): string {
 
 export function setupOpenClaw(
   arenaRoot: string,
-  _options?: { mode?: string }
+  options?: ClientSetupOptions
 ): string {
   // Verify openclaw is available — never modify user's global config or agents
   ensureOpenClawTradingAgent(arenaRoot);
 
   // Print instructions for optional MCP tools setup (user applies manually)
-  console.log(openclawMcpInstructions(arenaRoot));
+  console.log(openclawMcpInstructions(arenaRoot, options?.baseUrl));
 
   return "(no config modified — see instructions above)";
 }
@@ -199,7 +244,7 @@ export function setupOpenClaw(
 
 export const CLIENT_SETUP: Record<
   string,
-  (root: string, options?: { mode?: string }) => string
+  (root: string, options?: ClientSetupOptions) => string
 > = {
   "claude-code": setupClaudeCode,
   "claude-desktop": setupClaudeDesktop,
@@ -219,7 +264,8 @@ interface WiredEntry {
 export function autoWireMcpForAgent(
   home: string,
   agent: ManagedAgent,
-  detectedBackends: ManagedAgent[]
+  detectedBackends: ManagedAgent[],
+  options?: ClientSetupOptions
 ): WiredEntry[] {
   const wired: WiredEntry[] = [];
 
@@ -234,21 +280,21 @@ export function autoWireMcpForAgent(
 
   switch (agent) {
     case "claude":
-      wireOne("Claude Code", () => setupClaudeCodeUser(home));
+      wireOne("Claude Code", () => setupClaudeCodeUser(home, options));
       break;
     case "gemini":
-      wireOne("Gemini CLI", () => setupGemini(home));
+      wireOne("Gemini CLI", () => setupGemini(home, options));
       break;
     case "codex":
-      wireOne("Codex CLI", () => setupCodex(home));
+      wireOne("Codex CLI", () => setupCodex(home, options));
       break;
     case "openclaw":
-      wireOne("OpenClaw", () => setupOpenClaw(home));
+      wireOne("OpenClaw", () => setupOpenClaw(home, options));
       break;
     case "auto":
       // Print instructions for all detected backends
       for (const b of detectedBackends) {
-        wired.push(...autoWireMcpForAgent(home, b, []));
+        wired.push(...autoWireMcpForAgent(home, b, [], options));
       }
       break;
     // "rule" → no MCP wiring needed
