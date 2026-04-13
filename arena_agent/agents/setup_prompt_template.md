@@ -13,6 +13,7 @@ The JSON above contains:
   - `consecutive_hold_cycles`: how many setup cycles in a row the rule policy produced 0 trades. If this is high, the strategy is NOT generating signals in the current market.
   - `total_runtime_iterations_since_change`: total ticks (one per candle close) since the last strategy change. If this is high but trade count is 0, the strategy cannot fire in these conditions.
 - **performance**: overall stats AND current_strategy_performance (trades since last strategy change) — use the per-strategy stats to evaluate the CURRENT policy, not the overall stats. Key metrics: `avg_hold_seconds` (average trade duration), `trades_stopped_out` (losers closing < 120s), `trades_exited_fast` (all trades closing < 60s)
+- **recent_trades**: compact recent trade tape for live analysis — direction, entry/exit price, pnl, fee, hold_seconds, and close_reason for the last few trades
 - **tight_exit_alert**: (when present) your recent trades are closing within 60 seconds — TP/SL or exit expression MUST be widened immediately
 - **competition_ending_soon**: (when present) competition is about to end — close positions, stop opening new trades, protect PnL
 - **market_summary / market_5m / market_15m**: recent price, trend, volatility across timeframes

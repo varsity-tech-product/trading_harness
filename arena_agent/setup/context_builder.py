@@ -209,13 +209,20 @@ def build_setup_context(
     if isinstance(expr_errors, list) and expr_errors:
         context["expression_errors"] = expr_errors
 
-    # Recent trade performance (enhanced, with per-strategy breakdown)
+    # Recent trade performance and a compact trade tape for live analysis.
     try:
-        context["performance"] = _compute_performance(
-            competition_id, strategy_start_trades=strategy_start_trades,
+        trades = varsity_tools.get_trade_history(competition_id)
+        context["performance"] = _compute_performance_from_trades(
+            trades,
+            strategy_start_trades=strategy_start_trades,
+        )
+        context["recent_trades"] = _compact_recent_trades(
+            trades,
+            strategy_start_trades=strategy_start_trades,
         )
     except Exception as exc:
         context["performance"] = {"error": str(exc)}
+        context["recent_trades"] = []
 
     # Leaderboard position
     try:
@@ -429,6 +436,60 @@ def _summarize_trades(trades: list[dict]) -> dict[str, Any]:
     }
 
 
+def _compact_recent_trades(
+    trades: list[dict] | Any,
+    *,
+    limit: int = 8,
+    strategy_start_trades: int = 0,
+) -> list[dict[str, Any]]:
+    """Return a compact recent trade tape for the setup agent.
+
+    Includes enough per-trade detail for fee and exit analysis without dumping
+    the full raw API payload into the prompt.
+    """
+    if not isinstance(trades, list) or not trades:
+        return []
+
+    entries: list[dict[str, Any]] = []
+    total = len(trades)
+    strategy_cutoff = max(0, int(strategy_start_trades))
+    for idx, trade in enumerate(trades[:limit]):
+        if not isinstance(trade, dict):
+            continue
+
+        hold_seconds = None
+        raw_hold = trade.get("holdDuration")
+        if raw_hold is not None:
+            try:
+                hold_seconds = round(float(raw_hold) / 1000, 1)
+            except (TypeError, ValueError):
+                hold_seconds = None
+        elif trade.get("openTime") is not None and trade.get("closeTime") is not None:
+            try:
+                hold_seconds = round((float(trade["closeTime"]) - float(trade["openTime"])) / 1000, 1)
+            except (TypeError, ValueError):
+                hold_seconds = None
+
+        entries.append(
+            {
+                "direction": str(trade.get("direction") or "").lower() or None,
+                "size": _round_optional(trade.get("size")),
+                "entry_price": _round_optional(trade.get("entryPrice") or trade.get("entry_price")),
+                "exit_price": _round_optional(trade.get("exitPrice") or trade.get("exit_price")),
+                "pnl": _round_optional(trade.get("pnl") or trade.get("realizedPnl")),
+                "pnl_pct": _round_optional(trade.get("pnlPct")),
+                "fee": _round_optional(trade.get("fee") or trade.get("commission")),
+                "hold_seconds": hold_seconds,
+                "close_reason": trade.get("closeReason"),
+                "opened_at": trade.get("openTime") or trade.get("entryTime"),
+                "closed_at": trade.get("closeTime") or trade.get("exitTime"),
+                "is_open": trade.get("closeTime") is None or trade.get("exitPrice") is None,
+                "under_current_strategy": idx >= strategy_cutoff if strategy_cutoff > 0 else True,
+            }
+        )
+    return entries
+
+
 def _compute_performance(
     competition_id: int,
     strategy_start_trades: int = 0,
@@ -438,6 +499,18 @@ def _compute_performance(
         trades = varsity_tools.get_trade_history(competition_id)
     except Exception:
         return {"available": False}
+
+    return _compute_performance_from_trades(
+        trades,
+        strategy_start_trades=strategy_start_trades,
+    )
+
+
+def _compute_performance_from_trades(
+    trades: list[dict] | Any,
+    strategy_start_trades: int = 0,
+) -> dict[str, Any]:
+    """Compute performance metrics from a trade list, with per-strategy breakdown."""
 
     if not isinstance(trades, list) or not trades:
         return {"available": False, "trade_count": 0}
@@ -460,3 +533,12 @@ def _compute_performance(
         }
 
     return result
+
+
+def _round_optional(value: Any, digits: int = 4) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
