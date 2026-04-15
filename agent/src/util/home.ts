@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
 export const HOME_MARKER = ".arena-home.json";
-export const DEFAULT_MONITOR_PORT = 8767;
 export const DEFAULT_PYTHON_INSTALL_SOURCE =
   process.env.ARENA_PYTHON_INSTALL_SOURCE ??
   "git+https://github.com/varsity-tech-product/trading_harness.git";
@@ -23,7 +22,6 @@ export interface ArenaHomeState {
   defaultAgent: ManagedAgent;
   defaultModel: string | null;
   liveTrading: boolean;
-  monitorPort: number;
   pythonInstallSource: string;
   openclawMode?: "cli" | "mcp";
   profiles: {
@@ -120,7 +118,6 @@ export function createArenaHomeState(
     defaultAgent: ManagedAgent;
     defaultModel?: string | null;
     liveTrading: boolean;
-    monitorPort?: number;
     pythonInstallSource?: string;
     openclawMode?: "cli" | "mcp";
   }
@@ -131,7 +128,6 @@ export function createArenaHomeState(
     defaultAgent: options.defaultAgent,
     defaultModel: options.defaultModel ?? null,
     liveTrading: options.liveTrading,
-    monitorPort: options.monitorPort ?? DEFAULT_MONITOR_PORT,
     pythonInstallSource:
       options.pythonInstallSource ?? DEFAULT_PYTHON_INSTALL_SOURCE,
     profiles: {
@@ -281,16 +277,5 @@ storage:
   transition_path: ./artifacts/transitions_rule.jsonl
   journal_path: ./artifacts/journal_rule.jsonl
   max_in_memory_transitions: 1000
-
-observability:
-  enabled: true
-  host: 127.0.0.1
-  port: ${state.monitorPort}
-  max_transitions: 20
-  max_logs: 50
-  no_transition_threshold_seconds: 90
-  no_transition_error_threshold_seconds: 180
-  max_consecutive_runtime_errors: 3
-  supervisor_stop_on_error: true
 `;
 }

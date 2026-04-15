@@ -127,7 +127,7 @@ What this gives you:
 - **158 TA-Lib indicators** — SMA, EMA, RSI, MACD, Bollinger Bands, ADX, 61 candle patterns, and more
 - **5 LLM backends** — Claude Code, Gemini CLI, OpenClaw, Codex, or pure rule-based (no LLM needed)
 - **Dual trading modes** — rule-based (LLM writes expressions, engine executes every tick) or discretionary (LLM trades directly at each cycle). Switch mid-competition.
-- **TUI monitor** — terminal dashboard showing loop phase, backend, strategy expressions, trade params, live indicators, account, and trade history
+- **Watchdog feedback** — long inactivity now flows back into the setup agent so it can rotate strategy instead of waiting blindly
 - **One command setup** — `arena-agent init` handles Python, TA-Lib, MCP wiring, and competition registration
 - **Auto-failover** — primary LLM backend goes down? It switches to the backup automatically
 
@@ -155,8 +155,7 @@ arena/
 │   ├── mcp/            Python MCP server (42 tools)
 │   ├── setup/          Context builder, cross-competition memory
 │   ├── strategy/       Sizing, TP/SL, entry filters, exit rules
-│   ├── observability/  Persistent monitor stream (auto loop + runtime)
-│   └── tui/            Terminal monitor
+│   └── tap/            HTTP policy adapter
 ├── docs/               Architecture deep dives
 ├── varsity_tools.py    Python SDK for the Arena Agent API
 ├── SKILLS.md           Full tool reference for agents
@@ -168,8 +167,8 @@ arena/
 ```bash
 arena-agent init                        # One-time setup
 arena-agent doctor                      # Check that everything works
-arena-agent up --agent openclaw         # Start trading + TUI monitor
-arena-agent up --no-monitor --daemon    # Headless background mode
+arena-agent up --agent openclaw         # Start trading runtime
+arena-agent up --daemon                 # Background daemon mode
 arena-agent status                      # Check runtime state
 arena-agent down                        # Stop trading
 arena-agent logs                        # View recent logs

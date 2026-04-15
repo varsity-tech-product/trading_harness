@@ -32,11 +32,6 @@ _AGENT_EXEC_BACKENDS = {
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] == "monitor":
-        from arena_agent.tui.__main__ import main as monitor_main
-
-        monitor_main(argv[1:])
-        return
     if argv and argv[0] == "auto":
         _run_auto(argv[1:])
         return
@@ -450,27 +445,6 @@ def _run_auto(argv: list[str]) -> None:
         tool_proxy_enabled=tool_proxy_enabled,
     )
 
-    # --- Persistent monitor for the entire auto loop ---
-    from arena_agent.observability import RuntimeMonitor
-
-    obs_config = dict(config_dict.get("observability", {}))
-    obs_config["enabled"] = True  # always enable in auto mode
-    # Also attach the auto logger so setup-phase logs appear in the TUI
-    attach = list(obs_config.get("attach_loggers", ["arena_agent.runtime", "arena_agent.tap"]))
-    if "arena_agent.auto" not in attach:
-        attach.append("arena_agent.auto")
-    obs_config["attach_loggers"] = attach
-    monitor = RuntimeMonitor(obs_config, logger=log)
-    try:
-        monitor._start_server()
-    except OSError as exc:
-        log.warning("Observability stream unavailable: %s", exc)
-    monitor._attach_log_handler()
-    # Mark as started so MarketRuntime.start() resets runtime fields
-    # instead of trying to bind the port again.
-    monitor._started = True
-    monitor.update_auto_loop({"active": True, "setup_backend": setup_backend})
-
     # --- Liveness state ---
     inactive_cycles = 0          # consecutive cycles with 0 executed trades
     inactive_since: float | None = None  # wall-clock timestamp when inactivity started
@@ -520,7 +494,6 @@ def _run_auto(argv: list[str]) -> None:
     while not stop_requested:
         cycle += 1
         log.info("=== Auto cycle %d ===", cycle)
-        monitor.update_auto_loop({"cycle": cycle, "phase": "pre_check", "phase_started_at": time.time()})
 
         # --- Pre-check: is the competition still active? ---
         comp_status = None
@@ -528,7 +501,6 @@ def _run_auto(argv: list[str]) -> None:
             import varsity_tools
             comp_detail = varsity_tools.get_competition_detail(str(args.competition_id))
             comp_status = comp_detail.get("status") if isinstance(comp_detail, dict) else None
-            monitor.update_auto_loop({"competition_status": comp_status})
             if comp_status in ("completed", "settled", "cancelled", "ended_early"):
                 log.info("Competition %d is %s — searching for next competition.", args.competition_id, comp_status)
                 # Find and register for the next competition, then switch to it
@@ -557,7 +529,6 @@ def _run_auto(argv: list[str]) -> None:
         # --- Auto-register for open competitions + track announced ones ---
         # Runs BEFORE the "wait for live" gate so the agent registers while
         # the current competition is still in registration_open.
-        monitor.update_auto_loop({"phase": "registering", "phase_started_at": time.time()})
         if not args.no_auto_register:
             try:
                 my_regs = varsity_tools.get_my_registrations()
@@ -601,14 +572,6 @@ def _run_auto(argv: list[str]) -> None:
                                             "Registration watch: will check every 60s until %s opens",
                                             slug,
                                         )
-                            monitor.update_auto_loop({
-                                "upcoming_competition": {
-                                    "id": comp_id,
-                                    "slug": slug,
-                                    "title": comp.get("title"),
-                                    "registration_opens": reg_open,
-                                },
-                            })
                             continue
                         # registration_open — apply immediately
                         try:
@@ -629,11 +592,6 @@ def _run_auto(argv: list[str]) -> None:
                         "Competition %d is '%s' — goes live in %.1f min. Sleeping until then.",
                         args.competition_id, comp_status, seconds_until_live / 60,
                     )
-                    monitor.update_auto_loop({
-                        "phase": "waiting_for_live",
-                        "phase_started_at": time.time(),
-                        "live_at": start_time,
-                    })
                     # Sleep until start time + small buffer, wake early to re-check
                     wait = min(seconds_until_live + 5, 300)
                     _interruptible_sleep(wait, lambda: stop_requested)
@@ -643,7 +601,6 @@ def _run_auto(argv: list[str]) -> None:
                 "Competition %d is '%s' (not live yet) — rechecking in 30s.",
                 args.competition_id, comp_status,
             )
-            monitor.update_auto_loop({"phase": "waiting_for_live", "phase_started_at": time.time()})
             _interruptible_sleep(30, lambda: stop_requested)
             continue
 
@@ -662,15 +619,10 @@ def _run_auto(argv: list[str]) -> None:
                         "Competition ending soon: %.1f min remaining — alerting setup agent",
                         competition_remaining_minutes,
                     )
-                monitor.update_auto_loop({
-                    "competition_remaining_minutes": round(competition_remaining_minutes, 1),
-                    "competition_ending_soon": competition_ending_soon,
-                })
         except Exception as exc:
             log.debug("Competition end time check failed: %s", exc)
 
         # --- Pre-check: is the engine account still available? ---
-        monitor.update_auto_loop({"phase": "account_check", "phase_started_at": time.time()})
         try:
             acct_check = varsity_tools.get_live_account(args.competition_id)
             if isinstance(acct_check, dict) and acct_check.get("code") == 1001:
@@ -719,7 +671,6 @@ def _run_auto(argv: list[str]) -> None:
 
         try:
             # --- Setup phase ---
-            monitor.update_auto_loop({"phase": "setup", "phase_started_at": time.time()})
             setup_failed = False
             try:
                 actual_inactive_minutes = round((time.time() - inactive_since) / 60) if inactive_since else 0
@@ -754,14 +705,6 @@ def _run_auto(argv: list[str]) -> None:
                 overrides_summary = ""
                 if decision.action == "update" and decision.overrides:
                     overrides_summary = json.dumps(decision.overrides, default=str)[:200]
-                monitor.update_auto_loop({
-                    "last_setup_decision": {
-                        "action": decision.action,
-                        "reason": decision.reason,
-                        "overrides_summary": overrides_summary,
-                        "timestamp": time.time(),
-                    },
-                })
 
                 # Track setup failures for fallback logic
                 if decision.reason and decision.reason.startswith("setup_error"):
@@ -775,7 +718,6 @@ def _run_auto(argv: list[str]) -> None:
                 if decision.mode and decision.mode != config_dict.get("mode", "rule_based"):
                     log.info("Mode changed: %s -> %s", config_dict.get("mode", "rule_based"), decision.mode)
                     config_dict["mode"] = decision.mode
-                    monitor.update_auto_loop({"mode": decision.mode})
 
                 # --- Validate action against mode ---
                 current_mode = config_dict.get("mode", "rule_based")
@@ -805,13 +747,6 @@ def _run_auto(argv: list[str]) -> None:
                     trade_result = _execute_discretionary_trade(
                         decision.trade, config_dict, args.dry_run, log,
                     )
-                    monitor.update_auto_loop({
-                        "last_discretionary_trade": {
-                            "type": decision.trade.type,
-                            "result": trade_result,
-                            "timestamp": time.time(),
-                        },
-                    })
                     if trade_result and trade_result.get("executed"):
                         inactive_cycles = 0
                         inactive_since = None
@@ -913,12 +848,6 @@ def _run_auto(argv: list[str]) -> None:
                 # TP/SL is enforced server-side on the order.
                 # Just wait for the next setup cycle.
                 log.info("Discretionary mode: skipping runtime loop (next setup in ~%ds)", next_check)
-                monitor.update_auto_loop({
-                    "phase": "discretionary_wait",
-                    "phase_started_at": time.time(),
-                    "next_setup_check_seconds": next_check,
-                    "mode": "discretionary",
-                })
                 _interruptible_sleep(next_check, lambda: stop_requested)
 
             else:
@@ -928,16 +857,10 @@ def _run_auto(argv: list[str]) -> None:
                 config_dict["max_iterations"] = iterations
 
                 log.info("Starting runtime: %d iterations (%.0fs tick, next setup in ~%ds)", iterations, tick, next_check)
-                monitor.update_auto_loop({
-                    "phase": "runtime",
-                    "phase_started_at": time.time(),
-                    "next_setup_check_seconds": next_check,
-                    "mode": "rule_based",
-                })
 
                 try:
                     runtime_config = RuntimeConfig.from_mapping(config_dict)
-                    runtime = MarketRuntime(runtime_config, monitor=monitor)
+                    runtime = MarketRuntime(runtime_config)
                     report = runtime.run()
                     log.info(
                         "Runtime cycle %d done | iters=%s executed=%s pnl=%.4f equity=%s",
@@ -949,7 +872,7 @@ def _run_auto(argv: list[str]) -> None:
                     config_dict.pop("strategy", None)
                     try:
                         runtime_config = RuntimeConfig.from_mapping(config_dict)
-                        runtime = MarketRuntime(runtime_config, monitor=monitor)
+                        runtime = MarketRuntime(runtime_config)
                         report = runtime.run()
                         log.info(
                             "Runtime cycle %d done (fallback) | iters=%s executed=%s pnl=%.4f equity=%s",
@@ -1045,29 +968,6 @@ def _run_auto(argv: list[str]) -> None:
             except Exception as exc:
                 log.debug("Tight exit watchdog check failed: %s", exc)
 
-            # --- Publish watchdog + runtime result to monitor ---
-            if current_mode == "discretionary":
-                stop_reason_label = "discretionary"
-            elif report is not None:
-                stop_reason_label = getattr(report, "stop_reason", None)
-            else:
-                stop_reason_label = "crashed"
-            monitor.update_auto_loop({
-                "inactive_cycles": inactive_cycles,
-                "inactive_since": inactive_since,
-                "inactive_minutes": round((time.time() - inactive_since) / 60) if inactive_since else 0,
-                "tight_exit_detected": tight_exit_detected,
-                "tight_exit_avg_hold": tight_exit_avg_hold,
-                "total_runtime_iterations": total_runtime_iterations,
-                "consecutive_setup_failures": consecutive_setup_failures,
-                "consecutive_account_failures": consecutive_account_failures,
-                "error_backoff_seconds": error_backoff,
-                "last_runtime_stop_reason": stop_reason_label,
-                "last_runtime_iterations": report.iterations if report else None,
-                "last_runtime_executed": report.executed_actions if report else None,
-                "mode": current_mode,
-            })
-
             if stop_requested:
                 break
 
@@ -1080,26 +980,17 @@ def _run_auto(argv: list[str]) -> None:
                 if report is None or report.iterations <= 1:
                     wait = min(args.setup_interval, 60)
                     log.warning("Runtime finished in ≤1 iteration — waiting %ds before next cycle.", wait)
-                    monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
                     _interruptible_sleep(wait, lambda: stop_requested)
                 else:
-                    monitor.update_auto_loop({"phase": "waiting", "phase_started_at": time.time()})
                     _interruptible_sleep(2, lambda: stop_requested)
 
         except Exception as exc:
             # --- Self-healing: never exit during a live competition ---
             log.error("Auto cycle %d crashed: %s — retrying in %ds", cycle, exc, error_backoff, exc_info=True)
-            monitor.update_auto_loop({
-                "phase": "error_backoff",
-                "phase_started_at": time.time(),
-                "error_backoff_seconds": error_backoff,
-            })
             _interruptible_sleep(error_backoff, lambda: stop_requested)
             error_backoff = min(error_backoff * 2, max_error_backoff)
             continue
 
-    monitor.update_auto_loop({"active": False, "phase": "stopped"})
-    monitor.stop()
     log.info("Auto loop stopped after %d cycles.", cycle)
 
 

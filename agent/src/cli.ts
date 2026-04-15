@@ -12,10 +12,9 @@
  *   arena-agent init
  *   arena-agent doctor
  *   arena-agent up --agent gemini
- *   arena-agent monitor
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -37,7 +36,6 @@ import {
 import { buildChildEnv, loadEnvFile } from "./util/env.js";
 import { resolveBaseUrlOverride } from "./util/base-url.js";
 import {
-  DEFAULT_MONITOR_PORT,
   DEFAULT_PYTHON_INSTALL_SOURCE,
   ManagedAgent,
   artifactsDirPath,
@@ -206,11 +204,6 @@ async function main(): Promise<void> {
 
   if (command === "up") {
     const code = await runUp();
-    process.exit(code);
-  }
-
-  if (command === "monitor") {
-    const code = await runMonitorOnly();
     process.exit(code);
   }
 
@@ -405,7 +398,6 @@ function runDoctor(): void {
     console.log(`Default agent: ${state.defaultAgent}`);
     console.log(`Default model: ${state.defaultModel ?? "default"}`);
     console.log(`Mode:          ${state.liveTrading ? "live" : "dry-run"}`);
-    console.log(`Monitor port:  ${state.monitorPort}`);
     console.log(`Rule config:   ${state.profiles.rule}`);
     if (!existsSync(state.profiles.rule)) {
       errors.push(`Missing managed config: ${state.profiles.rule}`);
@@ -431,18 +423,6 @@ function runDoctor(): void {
       console.log(line);
     }
     errors.push(...ocDiag.errors);
-  }
-
-  if (pythonCheck.python) {
-    const monitorDepsOk = pythonImportsOk(
-      pythonCheck.python,
-      home,
-      ["textual", "rich"]
-    );
-    console.log(`Monitor deps:  ${monitorDepsOk ? "ok" : "missing"}`);
-    if (!monitorDepsOk) {
-      errors.push("Monitor dependencies are missing.");
-    }
   }
 
   if (errors.length > 0) {
@@ -500,141 +480,37 @@ async function runUp(): Promise<number> {
     runtimeArgs.push("--iterations", iterations);
   }
 
-  const monitorPort = Number(
-    optionValue("--port") ?? String(state.monitorPort ?? DEFAULT_MONITOR_PORT)
-  );
   const daemonMode = hasFlag("--daemon");
-  if (daemonMode && !hasFlag("--no-monitor")) {
-    throw new Error("Use --daemon together with --no-monitor. Attach later with `arena-agent monitor`.");
-  }
-  if (hasFlag("--no-monitor")) {
+  if (daemonMode) {
     const logPath = resolve(logsDirPath(home), `runtime-${Date.now()}.log`);
-    if (daemonMode) {
-      const logFd = openSync(logPath, "a");
-      const child = spawn(python, runtimeArgs, {
-        cwd: home,
-        env,
-        stdio: ["ignore", logFd, logFd],
-        detached: true,
-      });
-      closeSync(logFd);
-      child.unref();
-      if (child.pid) {
-        writeRuntimeState(home, {
-          pid: child.pid,
-          agent,
-          configPath,
-          logPath,
-          startedAt: new Date().toISOString(),
-          monitorPort,
-        });
-      }
-      console.log(`Runtime started in background with pid ${child.pid ?? "unknown"}`);
-      console.log(`Logs: ${logPath}`);
-      console.log(`Monitor: arena-agent monitor --home ${home}`);
-      return 0;
-    }
-
+    const logFd = openSync(logPath, "a");
     const child = spawn(python, runtimeArgs, {
       cwd: home,
       env,
-      stdio: "inherit",
+      stdio: ["ignore", logFd, logFd],
+      detached: true,
     });
-    return waitForExit(child);
+    closeSync(logFd);
+    child.unref();
+    if (child.pid) {
+      writeRuntimeState(home, {
+        pid: child.pid,
+        agent,
+        configPath,
+        logPath,
+        startedAt: new Date().toISOString(),
+      });
+    }
+    console.log(`Runtime started in background with pid ${child.pid ?? "unknown"}`);
+    console.log(`Logs: ${logPath}`);
+    return 0;
   }
 
-  const logPath = resolve(logsDirPath(home), `runtime-${Date.now()}.log`);
-  const logFd = openSync(logPath, "a");
-  const runtimeChild = spawn(python, runtimeArgs, {
-    cwd: home,
-    env,
-    stdio: ["ignore", logFd, logFd],
-  });
-  closeSync(logFd);
-  if (runtimeChild.pid) {
-    writeRuntimeState(home, {
-      pid: runtimeChild.pid,
-      agent,
-      configPath,
-      logPath,
-      startedAt: new Date().toISOString(),
-      monitorPort,
-    });
-  }
-
-  console.log(`Runtime started with pid ${runtimeChild.pid ?? "unknown"}`);
-  console.log(`Runtime logs: ${logPath}`);
-  await sleep(800);
-
-  const monitorArgs = [
-    "-m",
-    "arena_agent",
-    "monitor",
-    "--host",
-    "127.0.0.1",
-    "--port",
-    String(monitorPort),
-  ];
-  const monitorChild = spawn(python, monitorArgs, {
+  const child = spawn(python, runtimeArgs, {
     cwd: home,
     env,
     stdio: "inherit",
   });
-
-  const shutdown = () => {
-    if (!monitorChild.killed) {
-      monitorChild.kill("SIGINT");
-    }
-    if (!runtimeChild.killed) {
-      runtimeChild.kill("SIGTERM");
-    }
-  };
-
-  const onSignal = () => shutdown();
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
-
-  runtimeChild.once("exit", (code) => {
-    if (code && !monitorChild.killed) {
-      console.error(`Runtime exited with code ${code}. Check ${logPath}`);
-      monitorChild.kill("SIGINT");
-    }
-  });
-
-  const monitorCode = await waitForExit(monitorChild);
-  if (!runtimeChild.killed) {
-    runtimeChild.kill("SIGTERM");
-    await waitForExit(runtimeChild);
-  }
-  clearRuntimeState(home);
-  return monitorCode;
-}
-
-async function runMonitorOnly(): Promise<number> {
-  const home = resolveConfiguredHome(optionValue("--home"));
-  const state = readArenaHomeState(home);
-  const monitorPort = Number(
-    optionValue("--port") ?? String(state?.monitorPort ?? DEFAULT_MONITOR_PORT)
-  );
-  const python = findPython(home);
-  const env = buildChildEnv(home);
-  const child = spawn(
-    python,
-    [
-      "-m",
-      "arena_agent",
-      "monitor",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(monitorPort),
-    ],
-    {
-      cwd: home,
-      env,
-      stdio: "inherit",
-    }
-  );
   return waitForExit(child);
 }
 
@@ -776,7 +652,6 @@ async function runAutoTrade(): Promise<number> {
           configPath,
           logPath,
           startedAt: new Date().toISOString(),
-          monitorPort: state.monitorPort,
         });
       }
       console.log(`Runtime started (pid ${runtimeChild.pid}). Logs: ${logPath}`);
@@ -785,6 +660,11 @@ async function runAutoTrade(): Promise<number> {
       let runtimeExited = false;
       runtimeChild.once("exit", () => { runtimeExited = true; });
       let nextPollMs = pollMinutes * 60_000;
+      let processedLogLines = 0;
+      let inactivePolls = 0;
+      let inactiveSinceMs: number | null = null;
+      let totalRuntimeIterations = 0;
+      const maxInactivePolls = 4;
 
       while (!shutdownRequested && !runtimeExited) {
         await interruptableSleep(nextPollMs, () => shutdownRequested || runtimeExited);
@@ -814,14 +694,34 @@ async function runAutoTrade(): Promise<number> {
             );
           }
 
+          const activity = summarizeRuntimeActivity(logPath, processedLogLines);
+          processedLogLines = activity.processedLines;
+          totalRuntimeIterations += activity.iterationLines;
+          if (activity.executedActions > 0) {
+            inactivePolls = 0;
+            inactiveSinceMs = null;
+          } else {
+            inactivePolls += 1;
+            if (inactiveSinceMs === null) {
+              inactiveSinceMs = Date.now();
+            }
+          }
+
           // Run setup agent for mid-competition adjustment
           if (!noSetup) {
             try {
+              const inactiveMinutes = inactiveSinceMs === null
+                ? 0
+                : Math.max(0, Math.round((Date.now() - inactiveSinceMs) / 60_000));
               const adjustDecision = (await bridge.callTool("varsity.setup_decide", {
                 competition_id: competition.id,
                 backend: agent,
                 model: model ?? null,
                 config_path: configPath,
+                inactivity_alert: inactivePolls >= maxInactivePolls,
+                inactive_minutes: inactiveMinutes,
+                consecutive_hold_cycles: inactivePolls,
+                total_runtime_iterations: totalRuntimeIterations,
               }, { timeout: 360_000 })) as any;
 
               // Use LLM-requested poll interval if provided
@@ -847,6 +747,10 @@ async function runAutoTrade(): Promise<number> {
                 executeUpdate({ overrides: adjustDecision.overrides, config: configPath, agent }, home);
                 setupAdjustments++;
                 console.log(`  Setup agent adjustment: ${adjustDecision.reason}`);
+                inactivePolls = 0;
+                inactiveSinceMs = null;
+                totalRuntimeIterations = 0;
+                processedLogLines = countLogLines(logPath);
 
                 if (adjustDecision.restart_runtime && !runtimeExited) {
                   console.log("  Restarting runtime for config changes...");
@@ -867,9 +771,9 @@ async function runAutoTrade(): Promise<number> {
                       configPath,
                       logPath,
                       startedAt: new Date().toISOString(),
-                      monitorPort: state.monitorPort,
                     });
                   }
+                  processedLogLines = countLogLines(logPath);
                   console.log(`  Runtime restarted (pid ${runtimeChild.pid}).`);
                 }
               }
@@ -994,6 +898,43 @@ async function interruptableSleep(ms: number, shouldStop: () => boolean): Promis
   }
 }
 
+function countLogLines(path: string): number {
+  if (!existsSync(path)) {
+    return 0;
+  }
+  return readFileSync(path, "utf-8").split(/\r?\n/).length;
+}
+
+function summarizeRuntimeActivity(
+  path: string,
+  processedLines: number
+): { processedLines: number; iterationLines: number; executedActions: number } {
+  if (!existsSync(path)) {
+    return { processedLines, iterationLines: 0, executedActions: 0 };
+  }
+
+  const lines = readFileSync(path, "utf-8").split(/\r?\n/);
+  const freshLines = lines.slice(processedLines);
+  let iterationLines = 0;
+  let executedActions = 0;
+
+  for (const line of freshLines) {
+    if (!line.includes("Iteration ") || !line.includes(" executed=")) {
+      continue;
+    }
+    iterationLines += 1;
+    if (line.includes("executed=True")) {
+      executedActions += 1;
+    }
+  }
+
+  return {
+    processedLines: lines.length,
+    iterationLines,
+    executedActions,
+  };
+}
+
 function resolveConfiguredHome(explicitHome?: string): string {
   if (explicitHome) {
     return resolveArenaHome(explicitHome);
@@ -1110,11 +1051,10 @@ function printUsage(invocation: string): void {
   console.log("  check                    Validate Python environment");
   console.log("  init                     Bootstrap a managed Arena home");
   console.log("  doctor                   Check managed home, Python, deps, and backend CLI");
-  console.log("  up                       Start trading runtime and open the TUI monitor");
+  console.log("  up                       Start the trading runtime");
   console.log("  auto                     Autonomous daemon: find, join, trade, repeat (LLM setup agent configures strategy)");
-  console.log("  monitor                  Attach to the TUI monitor only");
   console.log("  upgrade                  Reinstall or refresh the managed Python runtime");
-  console.log("  status                   Show runtime pid, config, and monitor port");
+  console.log("  status                   Show runtime pid, config, and log path");
   console.log("  down                     Stop the background runtime");
   console.log("  logs                     Print recent runtime logs");
   console.log("  competitions             List active competitions");
@@ -1127,7 +1067,7 @@ function printUsage(invocation: string): void {
   console.log("  arena-agent init --agent openclaw --mode dry-run");
   console.log("  arena-agent init --competition 7              # register during init");
   console.log("  arena-agent up --agent gemini");
-  console.log("  arena-agent up --no-monitor --daemon");
+  console.log("  arena-agent up --daemon");
   console.log("  arena-agent upgrade");
   console.log("  arena-mcp setup --client claude-code");
   console.log("  arena-mcp setup --client gemini");
@@ -1371,7 +1311,6 @@ function runStatus(): void {
   console.log(`Agent:        ${runtimeState.agent}`);
   console.log(`Config:       ${runtimeState.configPath}`);
   console.log(`Logs:         ${runtimeState.logPath}`);
-  console.log(`Monitor port: ${runtimeState.monitorPort}`);
   console.log(`Started at:   ${runtimeState.startedAt}`);
 
   if (!running) {

@@ -275,8 +275,23 @@ def create_server(host: str = "127.0.0.1", port: int = 8000):
         backend: str = "auto",
         model: str | None = None,
         config_path: str | None = None,
+        inactivity_alert: bool = False,
+        inactive_minutes: int = 0,
+        consecutive_hold_cycles: int = 0,
+        total_runtime_iterations: int = 0,
     ) -> dict:
-        return to_jsonable(tools.setup_decide(competition_id, backend, model, config_path))
+        return to_jsonable(
+            tools.setup_decide(
+                competition_id,
+                backend,
+                model,
+                config_path,
+                inactivity_alert,
+                inactive_minutes,
+                consecutive_hold_cycles,
+                total_runtime_iterations,
+            )
+        )
 
     @mcp.tool(name="varsity.setup_record", description="Record a competition result in setup agent memory for future strategy decisions.")
     def setup_record(

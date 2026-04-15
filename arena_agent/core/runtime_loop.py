@@ -12,7 +12,6 @@ from arena_agent.core.environment_adapter import EnvironmentAdapter
 from arena_agent.core.models import RuntimeConfig, RuntimeReport, TransitionEvent, TransitionMetrics
 from arena_agent.core.runtime_safety import detect_position_drift, evaluate_state_guard
 from arena_agent.core.serialization import to_jsonable
-from arena_agent.observability import RuntimeMonitor
 from arena_agent.core.state_builder import StateBuilder
 from arena_agent.execution.order_executor import OrderExecutor
 from arena_agent.memory.transition_store import TransitionStore
@@ -69,7 +68,6 @@ class MarketRuntime:
         policy=None,
         strategy=None,
         logger: logging.Logger | None = None,
-        monitor: RuntimeMonitor | None = None,
     ) -> None:
         self.config = config
         self.logger = logger or logging.getLogger("arena_agent.runtime")
@@ -97,12 +95,9 @@ class MarketRuntime:
         self.journal = journal or TradeJournal(config.storage.journal_path)
         self.policy = policy or build_policy(config.policy, runtime_config=config)
         self.strategy = strategy or build_strategy_layer(config.strategy, risk_limits=config.risk_limits)
-        self._external_monitor = monitor is not None
-        self.monitor = monitor or RuntimeMonitor(config.observability, logger=self.logger)
 
     def run(self) -> RuntimeReport:
         self.policy.reset()
-        self.monitor.start(runtime_config=self.config, policy_name=getattr(self.policy, "name", "unknown"))
         start_timestamp = time.time()
         iterations = 0
         decisions = 0
@@ -152,18 +147,10 @@ class MarketRuntime:
                 drift_message = detect_position_drift(previous_live_state, state)
                 if drift_message is not None:
                     self.logger.warning(drift_message)
-                    self.monitor.record_position_drift(message=drift_message)
                     self.journal.record(
                         "position_drift",
                         {"iteration": iterations, "timestamp": time.time(), "message": drift_message},
                     )
-                self.monitor.record_state(
-                    iteration=iterations,
-                    decisions=decisions,
-                    executed_actions=executed_actions,
-                    policy_name=getattr(self.policy, "name", "unknown"),
-                    state=state,
-                )
                 if self.config.stop_when_competition_inactive and not state.competition.is_live:
                     self.logger.info("Competition %s is not live; stopping runtime.", self.config.competition_id)
                     self.journal.record(
@@ -176,13 +163,10 @@ class MarketRuntime:
                 guard = evaluate_state_guard(
                     state,
                     max_feature_age_seconds=_feature_age_threshold_seconds(self.config),
-                    require_feature_timestamp_match=bool(
-                        self.config.observability.get("require_feature_timestamp_match", True)
-                    ),
+                    require_feature_timestamp_match=True,
                 )
                 if not guard.ok:
                     self.logger.warning("State guard forced HOLD: %s", guard.reason)
-                    self.monitor.record_state_guard_failure(reason=guard.reason or "unknown", details=guard.details)
                     self.journal.record(
                         "state_guard_failure",
                         {
@@ -213,13 +197,6 @@ class MarketRuntime:
                             )
                             action = Action.hold(reason=f"strategy_refine_failed: {strat_exc}")
                 decisions += 1
-                self.monitor.record_decision(
-                    iteration=iterations,
-                    action=action,
-                    policy_name=getattr(self.policy, "name", "unknown"),
-                    latency_seconds=decision_latency,
-                    llm_usage=action.metadata.get("llm_usage"),
-                )
                 execution_result = self.executor.execute(action, state)
                 if execution_result.executed:
                     executed_actions += 1
@@ -240,15 +217,6 @@ class MarketRuntime:
                     added = self.state_builder.add_indicators(requested_indicators)
                     if added:
                         self.logger.info("Agent requested %d new indicator(s) for next tick.", added)
-                self.monitor.record_transition(
-                    iteration=iterations,
-                    decisions=decisions,
-                    executed_actions=executed_actions,
-                    next_state=next_state,
-                    action=action,
-                    execution_result=execution_result,
-                    transition=transition,
-                )
                 self.journal.record(
                     "transition",
                     {
@@ -296,28 +264,14 @@ class MarketRuntime:
 
             except Exception as exc:
                 self.logger.exception("Runtime iteration %s failed: %s", iterations, exc)
-                self.monitor.record_error(
-                    iteration=iterations,
-                    decisions=decisions,
-                    executed_actions=executed_actions,
-                    error=exc,
-                )
                 self.journal.record(
                     "error",
                     {"iteration": iterations, "timestamp": time.time(), "error": str(exc)},
                 )
-                if _should_stop_for_health(self.config, self.monitor.current_snapshot()):
-                    self.logger.error("Supervisor stopping runtime after health error.")
-                    stop_reason = "supervisor_health_error"
-                    break
                 time.sleep(self.config.error_backoff_seconds)
                 continue
 
             if self.config.max_iterations is not None and iterations >= self.config.max_iterations:
-                break
-            if _should_stop_for_health(self.config, self.monitor.current_snapshot()):
-                self.logger.error("Supervisor stopping runtime after health error.")
-                stop_reason = "supervisor_health_error"
                 break
             # Sleep in small increments so SIGTERM is responsive
             sleep_remaining = self.config.tick_interval_seconds
@@ -344,10 +298,6 @@ class MarketRuntime:
             total_fees=total_fees,
             start_timestamp=start_timestamp,
             end_timestamp=end_timestamp,
-        )
-        self.monitor.stop(
-            report=report, final_state=last_state, reason=stop_reason,
-            keep_server=self._external_monitor,
         )
         return report
 
@@ -379,14 +329,4 @@ class MarketRuntime:
 
 
 def _feature_age_threshold_seconds(config: RuntimeConfig) -> float:
-    raw = config.observability.get("state_feature_max_age_seconds")
-    if raw is not None:
-        return float(raw)
     return max(60.0, float(config.tick_interval_seconds) * 2.0)
-
-
-def _should_stop_for_health(config: RuntimeConfig, snapshot: dict[str, Any]) -> bool:
-    if not bool(config.observability.get("supervisor_stop_on_error", False)):
-        return False
-    health = dict(snapshot.get("health") or {})
-    return str(health.get("status") or "") == "error"

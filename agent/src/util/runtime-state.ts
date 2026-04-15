@@ -14,7 +14,6 @@ export interface RuntimeState {
   configPath: string;
   logPath: string;
   startedAt: string;
-  monitorPort: number;
 }
 
 export function runtimeStatePath(home: string): string {

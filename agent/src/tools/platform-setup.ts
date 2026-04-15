@@ -23,6 +23,25 @@ export const setupDecide = {
       .string()
       .optional()
       .describe("Path to runtime YAML config. Omit for default."),
+    inactivity_alert: z
+      .boolean()
+      .optional()
+      .describe("Whether the runtime inactivity watchdog is currently active."),
+    inactive_minutes: z
+      .number()
+      .int()
+      .optional()
+      .describe("Minutes since the inactivity watchdog window started."),
+    consecutive_hold_cycles: z
+      .number()
+      .int()
+      .optional()
+      .describe("Consecutive setup cycles with zero executed runtime trades."),
+    total_runtime_iterations: z
+      .number()
+      .int()
+      .optional()
+      .describe("Runtime iterations elapsed since the last strategy change."),
   }),
   pythonTool: "varsity.setup_decide",
 };

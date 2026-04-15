@@ -199,7 +199,6 @@ class RuntimeConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     policy: dict[str, Any] = field(default_factory=dict)
     strategy: dict[str, Any] = field(default_factory=dict)
-    observability: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "RuntimeConfig":
@@ -227,7 +226,6 @@ class RuntimeConfig:
             storage=StorageConfig.from_mapping(data.get("storage")),
             policy=dict(data.get("policy", {})),
             strategy=dict(data.get("strategy", {})),
-            observability=dict(data.get("observability", {})),
         )
 
 

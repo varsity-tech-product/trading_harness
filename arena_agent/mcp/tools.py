@@ -291,6 +291,10 @@ def setup_decide(
     backend: str = "auto",
     model: Optional[str] = None,
     config_path: Optional[str] = None,
+    inactivity_alert: bool = False,
+    inactive_minutes: int = 0,
+    consecutive_hold_cycles: int = 0,
+    total_runtime_iterations: int = 0,
 ):
     """Run the setup agent to get a config decision."""
     import os
@@ -317,7 +321,15 @@ def setup_decide(
     recent = memory.recent(5)
 
     # Build context
-    context = build_setup_context(competition_id, config, recent)
+    context = build_setup_context(
+        competition_id,
+        config,
+        recent,
+        inactivity_alert=inactivity_alert,
+        inactive_minutes=inactive_minutes,
+        consecutive_hold_cycles=consecutive_hold_cycles,
+        total_runtime_iterations=total_runtime_iterations,
+    )
 
     # Run setup agent
     agent = SetupAgent(backend=backend, model=model)

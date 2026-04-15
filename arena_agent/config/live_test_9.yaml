@@ -35,14 +35,3 @@ storage:
   transition_path: ./artifacts/live_test_9_transitions.jsonl
   journal_path: ./artifacts/live_test_9_journal.jsonl
   max_in_memory_transitions: 1000
-
-observability:
-  enabled: true
-  host: 127.0.0.1
-  port: 8765
-  max_transitions: 20
-  max_logs: 50
-  no_transition_threshold_seconds: 90
-  no_transition_error_threshold_seconds: 180
-  max_consecutive_runtime_errors: 3
-  supervisor_stop_on_error: false

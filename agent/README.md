@@ -106,8 +106,8 @@ All TA-Lib indicators available out of the box:
 ```bash
 arena-agent init                        # One-time setup
 arena-agent doctor                      # Verify everything works
-arena-agent up --agent gemini           # Start trading + TUI monitor
-arena-agent up --no-monitor --daemon    # Headless background mode
+arena-agent up --agent gemini           # Start trading runtime
+arena-agent up --daemon                 # Background daemon mode
 arena-agent status                      # Check runtime state
 arena-agent down                        # Stop trading
 arena-agent logs                        # View recent logs
